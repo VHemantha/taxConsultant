@@ -1,0 +1,232 @@
+from rest_framework import serializers
+from decimal import Decimal
+from .models import (
+    TaxYear, TaxSubmission, LocalEmploymentIncome, ForeignIncome,
+    TerminalBenefit, RentIncome, InterestIncome, DividendIncome,
+    SoleProprietorshipIncome, OtherIncome, QualifyingPayments,
+    SelfAssessmentPayment, TaxCredits, ImmovableProperty, MotorVehicle,
+    BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
+    BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
+    SubmissionEditLog,
+)
+
+
+class TaxYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaxYear
+        fields = '__all__'
+
+
+class LocalEmploymentIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LocalEmploymentIncome
+        exclude = ['submission']
+
+
+class ForeignIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ForeignIncome
+        exclude = ['submission']
+
+
+class TerminalBenefitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TerminalBenefit
+        exclude = ['submission']
+
+
+class RentIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RentIncome
+        exclude = ['submission']
+
+
+class InterestIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InterestIncome
+        exclude = ['submission']
+
+
+class DividendIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DividendIncome
+        exclude = ['submission']
+
+
+class SoleProprietorshipIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SoleProprietorshipIncome
+        exclude = ['submission']
+
+
+class OtherIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OtherIncome
+        exclude = ['submission']
+
+
+class QualifyingPaymentsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QualifyingPayments
+        exclude = ['submission']
+
+
+class SelfAssessmentPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SelfAssessmentPayment
+        exclude = ['submission']
+
+
+class TaxCreditsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaxCredits
+        exclude = ['submission']
+
+
+class ImmovablePropertySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ImmovableProperty
+        exclude = ['submission']
+
+
+class MotorVehicleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MotorVehicle
+        exclude = ['submission']
+
+
+class BankBalanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BankBalance
+        exclude = ['submission']
+
+
+class SharesStocksSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SharesStocks
+        exclude = ['submission']
+
+
+class CashInHandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashInHand
+        exclude = ['submission']
+
+
+class LoansGivenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LoansGiven
+        exclude = ['submission']
+
+
+class GoldSilverJewellerySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GoldSilverJewellery
+        exclude = ['submission']
+
+
+class BusinessPropertySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusinessProperty
+        exclude = ['submission']
+
+
+class OtherAssetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OtherAsset
+        exclude = ['submission']
+
+
+class DisposalOfAssetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DisposalOfAsset
+        exclude = ['submission']
+
+
+class LiabilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Liability
+        exclude = ['submission']
+
+
+class DeclarantDetailsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeclarantDetails
+        exclude = ['submission']
+
+
+# ─── Full Submission Serializer ───────────────────────────────────────────────
+
+class TaxSubmissionSerializer(serializers.ModelSerializer):
+    local_employment = LocalEmploymentIncomeSerializer(read_only=True)
+    foreign_income = ForeignIncomeSerializer(read_only=True)
+    terminal_benefit = TerminalBenefitSerializer(read_only=True)
+    rent_income = RentIncomeSerializer(read_only=True)
+    interest_income = InterestIncomeSerializer(read_only=True)
+    dividend_income = DividendIncomeSerializer(read_only=True)
+    sole_proprietorship = SoleProprietorshipIncomeSerializer(read_only=True)
+    other_income = OtherIncomeSerializer(read_only=True)
+    qualifying_payments = QualifyingPaymentsSerializer(read_only=True)
+    self_assessment_payments = SelfAssessmentPaymentSerializer(many=True, read_only=True)
+    tax_credits = TaxCreditsSerializer(read_only=True)
+    immovable_properties = ImmovablePropertySerializer(many=True, read_only=True)
+    motor_vehicles = MotorVehicleSerializer(many=True, read_only=True)
+    bank_balances = BankBalanceSerializer(many=True, read_only=True)
+    shares_stocks = SharesStocksSerializer(many=True, read_only=True)
+    cash_in_hand = CashInHandSerializer(read_only=True)
+    loans_given = LoansGivenSerializer(many=True, read_only=True)
+    gold_jewellery = GoldSilverJewellerySerializer(read_only=True)
+    business_properties = BusinessPropertySerializer(many=True, read_only=True)
+    other_assets = OtherAssetSerializer(many=True, read_only=True)
+    disposals = DisposalOfAssetSerializer(many=True, read_only=True)
+    liabilities = LiabilitySerializer(many=True, read_only=True)
+    declarant_details = DeclarantDetailsSerializer(read_only=True)
+    tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
+    client_name = serializers.SerializerMethodField()
+    client_email = serializers.EmailField(source='client.email', read_only=True)
+
+    class Meta:
+        model = TaxSubmission
+        fields = '__all__'
+
+    def get_client_name(self, obj):
+        profile = getattr(obj.client, 'client_profile', None)
+        if profile:
+            return profile.full_name
+        return obj.client.get_full_name() or obj.client.email
+
+
+class TaxSubmissionListSerializer(serializers.ModelSerializer):
+    tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
+    client_name = serializers.SerializerMethodField()
+    client_email = serializers.EmailField(source='client.email', read_only=True)
+
+    class Meta:
+        model = TaxSubmission
+        fields = [
+            'id', 'client', 'client_name', 'client_email',
+            'tax_year', 'tax_year_label', 'status',
+            'total_assessable_income', 'net_taxable_income',
+            'total_tax_credits', 'net_tax_payable',
+            'info_request_message',
+            'created_at', 'submitted_at', 'confirmed_at',
+        ]
+
+    def get_client_name(self, obj):
+        profile = getattr(obj.client, 'client_profile', None)
+        if profile:
+            return profile.full_name
+        return obj.client.get_full_name() or obj.client.email
+
+
+class SubmissionEditLogSerializer(serializers.ModelSerializer):
+    edited_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubmissionEditLog
+        fields = ['id', 'section', 'action', 'description', 'old_data', 'new_data', 'edited_by_name', 'edited_at']
+
+    def get_edited_by_name(self, obj):
+        if obj.edited_by:
+            return obj.edited_by.get_full_name() or obj.edited_by.email
+        return 'Unknown'
