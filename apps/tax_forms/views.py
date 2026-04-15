@@ -15,7 +15,7 @@ from .models import (
     SelfAssessmentPayment, TaxCredits, ImmovableProperty, MotorVehicle,
     BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
     BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
-    SubmissionEditLog,
+    SubmissionEditLog, WHTCertificate, PreviousYearAccessRequest, SystemSettings,
 )
 from .serializers import (
     SubmissionEditLogSerializer,
@@ -29,6 +29,8 @@ from .serializers import (
     LoansGivenSerializer, GoldSilverJewellerySerializer, BusinessPropertySerializer,
     OtherAssetSerializer, DisposalOfAssetSerializer, LiabilitySerializer,
     DeclarantDetailsSerializer,
+    WHTCertificateSerializer, WHTCertificateUploadSerializer,
+    PreviousYearAccessRequestSerializer, SystemSettingsSerializer,
 )
 from .tax_calculator import calculate_full_tax
 from .pdf_generator import generate_tax_submission_pdf
@@ -39,9 +41,36 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 
+# ── Permission helpers ────────────────────────────────────────────────────────
+
 class IsConsultant(IsAuthenticated):
+    """Allows consultant AND handling_person roles (plus admin)."""
     def has_permission(self, request, view):
-        return super().has_permission(request, view) and request.user.role == 'consultant'
+        return (
+            super().has_permission(request, view)
+            and request.user.role in ('consultant', 'handling_person', 'admin')
+        )
+
+
+class IsAdmin(IsAuthenticated):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and request.user.role == 'admin'
+
+
+class IsAccountsDivision(IsAuthenticated):
+    def has_permission(self, request, view):
+        return (
+            super().has_permission(request, view)
+            and request.user.role in ('accounts_division', 'admin')
+        )
+
+
+class IsAdminOrConsultant(IsAuthenticated):
+    def has_permission(self, request, view):
+        return (
+            super().has_permission(request, view)
+            and request.user.role in ('admin', 'consultant', 'handling_person')
+        )
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -295,6 +324,7 @@ class ConfirmCalculationView(APIView):
 
         # Update submission with calculated values
         submission.total_assessable_income = result['total_assessable_income']
+        submission.exempt_dividend_income = result['exempt_dividend_income']
         submission.total_qualifying_payments = result['total_qualifying_payments']
         submission.personal_relief = result['personal_relief']
         submission.rent_relief = result['rent_relief']
@@ -302,6 +332,7 @@ class ConfirmCalculationView(APIView):
         submission.gross_tax = result['gross_tax']
         submission.total_tax_credits = result['total_tax_credits']
         submission.net_tax_payable = result['net_tax_payable']
+        submission.slab_breakdown = result['slab_breakdown']
         submission.status = 'awaiting_confirmation'
         submission.reviewed_by = request.user
         submission.reviewed_at = timezone.now()
@@ -888,3 +919,358 @@ class SubmissionEditLogsView(APIView):
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         logs = submission.edit_logs.select_related('edited_by').all()
         return Response(SubmissionEditLogSerializer(logs, many=True).data)
+
+
+# ── Live Tax Calculation (no save) ─────────────────────────────────────────────
+
+class LiveCalculateView(APIView):
+    """
+    Returns the calculated tax values for a submission WITHOUT saving.
+    Used by the consultant page to show a live preview before confirming.
+    Fixes the 'Total Assessable Income shows as 0' issue (Change 5).
+    """
+    permission_classes = [IsConsultant]
+
+    def get(self, request, pk):
+        submission = _get_submission_for_user(pk, request.user)
+        if not submission:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        result = calculate_full_tax(submission)
+        # Convert Decimals to strings for JSON serialisation
+        return Response({
+            k: str(v) if hasattr(v, 'quantize') else v
+            for k, v in result.items()
+        })
+
+
+# ── Payment Status Update (Accounts Division) ─────────────────────────────────
+
+class PaymentStatusView(APIView):
+    """PATCH payment_status on a submission. Accounts Division only."""
+    permission_classes = [IsAccountsDivision]
+
+    def patch(self, request, pk):
+        try:
+            submission = TaxSubmission.objects.get(id=pk)
+        except TaxSubmission.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('payment_status')
+        if new_status not in ('pending', 'paid', 'overdue'):
+            return Response(
+                {'error': "payment_status must be 'pending', 'paid', or 'overdue'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        submission.payment_status = new_status
+        submission.payment_updated_by = request.user
+        submission.payment_updated_at = timezone.now()
+        submission.save(update_fields=['payment_status', 'payment_updated_by', 'payment_updated_at'])
+        return Response({
+            'payment_status': submission.payment_status,
+            'payment_updated_at': submission.payment_updated_at,
+        })
+
+
+# ── IRD Submission Upload ─────────────────────────────────────────────────────
+
+class IRDSubmissionUploadView(APIView):
+    """POST to upload the IRD return copy. Admin / Handling Person only."""
+    permission_classes = [IsAdminOrConsultant]
+
+    def post(self, request, pk):
+        submission = _get_submission_for_user(pk, request.user)
+        if not submission:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        file = request.FILES.get('ird_submission_file')
+        if not file:
+            return Response({'error': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not file.name.lower().endswith('.pdf'):
+            return Response({'error': 'Only PDF files are accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        submission.ird_submission_file = file
+        submission.ird_submitted_at = timezone.now()
+        submission.save(update_fields=['ird_submission_file', 'ird_submitted_at'])
+        return Response({
+            'message': 'IRD submission file uploaded.',
+            'ird_submitted_at': submission.ird_submitted_at,
+        })
+
+
+# ── WHT Certificates ──────────────────────────────────────────────────────────
+
+class WHTCertificateListView(APIView):
+    """List and upload WHT certificates for a submission."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, submission_id):
+        submission = _get_submission_for_user(submission_id, request.user)
+        if not submission:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        certs = submission.wht_certificates.all()
+        return Response(WHTCertificateSerializer(certs, many=True, context={'request': request}).data)
+
+    def post(self, request, submission_id):
+        submission = _get_submission_for_user(submission_id, request.user)
+        if not submission:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if submission.status == 'archived':
+            return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        file = request.FILES.get('certificate_file')
+        if file and not file.name.lower().endswith('.pdf'):
+            return Response({'error': 'Only PDF files are accepted for WHT certificates.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = WHTCertificateUploadSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            cert = serializer.save(submission=submission)
+            if file:
+                cert.certificate_file = file
+                cert.original_filename = file.name
+                cert.save(update_fields=['certificate_file', 'original_filename'])
+            return Response(
+                WHTCertificateSerializer(cert, context={'request': request}).data,
+                status=status.HTTP_201_CREATED,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class WHTCertificateItemView(APIView):
+    """Delete a WHT certificate."""
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            cert = WHTCertificate.objects.select_related('submission').get(id=pk)
+        except WHTCertificate.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # Ownership check
+        sub = _get_submission_for_user(cert.submission_id, request.user)
+        if not sub:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        cert.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def get(self, request, pk):
+        try:
+            cert = WHTCertificate.objects.select_related('submission').get(id=pk)
+        except WHTCertificate.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        sub = _get_submission_for_user(cert.submission_id, request.user)
+        if not sub:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(WHTCertificateSerializer(cert, context={'request': request}).data)
+
+
+# ── WHT Category Choices ──────────────────────────────────────────────────────
+
+class WHTCategoryListView(APIView):
+    """Returns available WHT categories for dropdown rendering (Change 14)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        categories = [
+            {'value': k, 'label': v}
+            for k, v in WHTCertificate.WHT_CATEGORY_CHOICES
+        ]
+        return Response(categories)
+
+
+# ── Previous Year Access Requests ─────────────────────────────────────────────
+
+class AccessRequestListView(APIView):
+    """
+    Client: POST to request access to a previous year's data.
+    Admin/Consultant: GET to list all pending requests.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role not in ('admin', 'consultant', 'handling_person'):
+            return Response({'error': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+        requests_qs = PreviousYearAccessRequest.objects.select_related(
+            'client', 'tax_year', 'approved_by'
+        ).order_by('-requested_at')
+        return Response(PreviousYearAccessRequestSerializer(requests_qs, many=True).data)
+
+    def post(self, request):
+        if request.user.role != 'client':
+            return Response({'error': 'Only clients can request access.'}, status=status.HTTP_403_FORBIDDEN)
+        tax_year_id = request.data.get('tax_year')
+        if not tax_year_id:
+            return Response({'error': 'tax_year is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            tax_year = TaxYear.objects.get(id=tax_year_id)
+        except TaxYear.DoesNotExist:
+            return Response({'error': 'Invalid tax year.'}, status=status.HTTP_404_NOT_FOUND)
+
+        obj, created = PreviousYearAccessRequest.objects.get_or_create(
+            client=request.user, tax_year=tax_year,
+            defaults={'status': 'pending'},
+        )
+        if not created and obj.status == 'denied':
+            # Allow re-request after denial
+            obj.status = 'pending'
+            obj.reviewed_at = None
+            obj.save(update_fields=['status', 'reviewed_at'])
+
+        return Response(
+            PreviousYearAccessRequestSerializer(obj).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class AccessRequestDetailView(APIView):
+    """Admin: PATCH to approve or deny an access request."""
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, pk):
+        try:
+            access_req = PreviousYearAccessRequest.objects.get(id=pk)
+        except PreviousYearAccessRequest.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        if new_status not in ('approved', 'denied'):
+            return Response({'error': "status must be 'approved' or 'denied'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        access_req.status = new_status
+        access_req.approved_by = request.user
+        access_req.reviewed_at = timezone.now()
+        access_req.notes = request.data.get('notes', access_req.notes)
+        access_req.save()
+
+        # Notify client
+        Notification.objects.create(
+            recipient=access_req.client,
+            title='Access Request Update',
+            message=f'Your request to access {access_req.tax_year.label} data has been {new_status}.',
+            notification_type='info',
+        )
+        return Response(PreviousYearAccessRequestSerializer(access_req).data)
+
+
+# ── Dashboard Status Drill-Down (Change 4) ────────────────────────────────────
+
+class DashboardStatusDetailView(APIView):
+    """
+    GET /api/tax/dashboard/status/<status_key>/
+    Returns paginated list of submissions for the given status.
+    Query params: ?handling_person_id=, ?year=, ?page=
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, status_key):
+        from django.core.paginator import Paginator
+
+        valid_statuses = dict(TaxSubmission.STATUS_CHOICES).keys()
+        if status_key not in valid_statuses:
+            return Response({'error': 'Invalid status.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user.role in ('admin',):
+            qs = TaxSubmission.objects.filter(status=status_key)
+        elif request.user.role in ('consultant', 'handling_person'):
+            client_ids = ClientProfile.objects.filter(
+                assigned_consultant=request.user
+            ).values_list('user_id', flat=True)
+            qs = TaxSubmission.objects.filter(status=status_key, client_id__in=client_ids)
+        else:
+            return Response({'error': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Filters
+        hp_id = request.query_params.get('handling_person_id')
+        if hp_id:
+            hp_client_ids = ClientProfile.objects.filter(
+                assigned_consultant_id=hp_id
+            ).values_list('user_id', flat=True)
+            qs = qs.filter(client_id__in=hp_client_ids)
+        year = request.query_params.get('year')
+        if year:
+            qs = qs.filter(tax_year__year=year)
+
+        qs = qs.select_related('client', 'client__client_profile', 'tax_year')
+        page_num = int(request.query_params.get('page', 1))
+        paginator = Paginator(qs, 20)
+        page = paginator.get_page(page_num)
+
+        return Response({
+            'count': paginator.count,
+            'num_pages': paginator.num_pages,
+            'page': page_num,
+            'results': TaxSubmissionListSerializer(page.object_list, many=True).data,
+        })
+
+
+# ── Portfolio Dashboard (Change 7) ────────────────────────────────────────────
+
+class PortfolioDashboardView(APIView):
+    """
+    GET /api/tax/dashboard/portfolio/
+    Returns per-handling-person stats.
+    Admin sees all; Handling Person sees only themselves.
+    """
+    permission_classes = [IsConsultant]
+
+    def get(self, request):
+        year = request.query_params.get('year')
+
+        if request.user.role == 'admin':
+            handling_persons = User.objects.filter(
+                role__in=('consultant', 'handling_person')
+            )
+        else:
+            handling_persons = User.objects.filter(id=request.user.id)
+
+        result = []
+        for hp in handling_persons:
+            client_ids = ClientProfile.objects.filter(
+                assigned_consultant=hp
+            ).values_list('user_id', flat=True)
+            sub_qs = TaxSubmission.objects.filter(client_id__in=client_ids)
+            if year:
+                sub_qs = sub_qs.filter(tax_year__year=year)
+
+            total = sub_qs.count()
+            breakdown = {}
+            for st_key, _ in TaxSubmission.STATUS_CHOICES:
+                breakdown[st_key] = sub_qs.filter(status=st_key).count()
+
+            completed = sub_qs.filter(status__in=('confirmed', 'archived')).count()
+            pct = round((completed / total * 100), 1) if total else 0.0
+
+            result.append({
+                'handling_person_id': hp.id,
+                'handling_person_name': hp.get_full_name() or hp.email,
+                'handling_person_email': hp.email,
+                'total_clients': len(client_ids),
+                'total_submissions': total,
+                'status_breakdown': breakdown,
+                'completion_percentage': pct,
+            })
+        return Response(result)
+
+
+# ── System Settings (Change 12) ───────────────────────────────────────────────
+
+class SystemSettingsView(APIView):
+    """GET system settings (public); PATCH is admin-only."""
+
+    def get_permissions(self):
+        if self.request.method == 'PATCH':
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+
+    def get(self, request):
+        obj = SystemSettings.get()
+        return Response(SystemSettingsSerializer(obj, context={'request': request}).data)
+
+    def patch(self, request):
+        obj = SystemSettings.get()
+        serializer = SystemSettingsSerializer(obj, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            # Handle logo upload separately
+            if 'company_logo' in request.FILES:
+                obj.company_logo = request.FILES['company_logo']
+            serializer.save()
+            return Response(SystemSettingsSerializer(obj, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -2,6 +2,19 @@ from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from decimal import Decimal
+import os
+
+
+def _ird_upload_path(instance, filename):
+    return f'ird_submissions/{instance.id}/{filename}'
+
+
+def _wht_cert_upload_path(instance, filename):
+    return f'wht_certificates/{instance.submission_id}/{filename}'
+
+
+def _logo_upload_path(instance, filename):
+    return f'system/logo/{filename}'
 
 
 class TaxYear(models.Model):
@@ -52,13 +65,38 @@ class TaxSubmission(models.Model):
 
     # Calculated tax fields (set by consultant/system)
     total_assessable_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    exempt_dividend_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_qualifying_payments = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     personal_relief = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('1800000.00'))
     rent_relief = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    # net_taxable_income kept for backward compat; display label = "Taxable Income"
     net_taxable_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     gross_tax = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_tax_credits = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     net_tax_payable = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    # Slab breakdown stored as JSON after each calculation
+    slab_breakdown = models.JSONField(null=True, blank=True)
+
+    # Payment tracking (Accounts Division)
+    PAYMENT_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('paid', 'Paid'),
+        ('overdue', 'Overdue'),
+    ]
+    payment_status = models.CharField(
+        max_length=10, choices=PAYMENT_STATUS_CHOICES, default='pending'
+    )
+    payment_updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payment_updates',
+    )
+    payment_updated_at = models.DateTimeField(null=True, blank=True)
+
+    # IRD submission tracking
+    ird_submission_file = models.FileField(
+        upload_to='ird_submissions/', null=True, blank=True
+    )
+    ird_submitted_at = models.DateTimeField(null=True, blank=True)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -91,8 +129,13 @@ class LocalEmploymentIncome(models.Model):
 
 class ForeignIncome(models.Model):
     submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='foreign_income')
+    source_country = models.CharField(max_length=100, blank=True, null=True)
     employment_service_fee = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     other_foreign_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    foreign_tax_paid = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'),
+                                           help_text='Foreign tax already paid — eligible as tax credit')
+    treaty_rate = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True,
+                                      help_text='Double-tax treaty rate (e.g. 0.15 for 15%). Leave blank for standard rate.')
     notes = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -135,7 +178,11 @@ class InterestIncome(models.Model):
 
 class DividendIncome(models.Model):
     submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='dividend_income')
+    # Taxable dividends (not from resident companies subject to 15% WHT)
     amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    # Exempt dividends from resident companies subject to 15% WHT
+    exempt_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'),
+                                        help_text='Dividends from resident companies at 15% WHT — exempt from tax')
     notes = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -365,6 +412,92 @@ class DeclarantDetails(models.Model):
 
     class Meta:
         db_table = 'declarant_details'
+
+
+# ─── WHT CERTIFICATES ────────────────────────────────────────────────────────
+
+class WHTCertificate(models.Model):
+    WHT_CATEGORY_CHOICES = [
+        ('rent', 'Rent'),
+        ('interest', 'Interest'),
+        ('service_fees', 'Service Fees'),
+        ('employment', 'Employment (APIT)'),
+        ('other', 'Other'),
+    ]
+    submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='wht_certificates')
+    category = models.CharField(max_length=20, choices=WHT_CATEGORY_CHOICES, default='other')
+    certificate_file = models.FileField(upload_to=_wht_cert_upload_path, null=True, blank=True)
+    original_filename = models.CharField(max_length=255, blank=True)
+    amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'),
+                                 help_text='WHT amount shown on certificate')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'wht_certificates'
+        ordering = ['category', '-uploaded_at']
+
+    def __str__(self):
+        return f"{self.get_category_display()} — Rs. {self.amount}"
+
+
+# ─── PREVIOUS YEAR ACCESS REQUESTS ───────────────────────────────────────────
+
+class PreviousYearAccessRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('denied', 'Denied'),
+    ]
+    client = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='access_requests',
+    )
+    tax_year = models.ForeignKey(TaxYear, on_delete=models.CASCADE, related_name='access_requests')
+    requested_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='approved_access_requests',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'previous_year_access_requests'
+        unique_together = ['client', 'tax_year']
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"{self.client.email} → {self.tax_year.label} ({self.status})"
+
+
+# ─── SYSTEM SETTINGS ─────────────────────────────────────────────────────────
+
+class SystemSettings(models.Model):
+    """Singleton model for global configuration (company name, logo, etc.)."""
+    company_name = models.CharField(max_length=200, default='TAX AUTOMATION PORTAL')
+    company_tagline = models.CharField(max_length=300, blank=True, default='PERSONAL INCOME TAX RETURN')
+    company_logo = models.ImageField(upload_to=_logo_upload_path, null=True, blank=True)
+    footer_text = models.CharField(max_length=300, blank=True, default='Tax Automation Portal | Confidential')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'system_settings'
+        verbose_name = 'System Settings'
+        verbose_name_plural = 'System Settings'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return self.company_name
 
 
 # ─── AUDIT / EDIT LOG ────────────────────────────────────────────────────────

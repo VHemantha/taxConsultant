@@ -25,6 +25,12 @@ from .views import (
     LiabilityListView, LiabilityItemView,
     # Declarant
     DeclarantDetailsView,
+    # New views (Phase 2)
+    LiveCalculateView, PaymentStatusView, IRDSubmissionUploadView,
+    WHTCertificateListView, WHTCertificateItemView, WHTCategoryListView,
+    AccessRequestListView, AccessRequestDetailView,
+    DashboardStatusDetailView, PortfolioDashboardView,
+    SystemSettingsView,
 )
 
 urlpatterns = [
@@ -37,6 +43,13 @@ urlpatterns = [
     path('submissions/<int:pk>/client-confirm/', ClientConfirmView.as_view(), name='client_confirm'),
     path('submissions/<int:pk>/pdf/', GeneratePDFView.as_view(), name='generate_pdf'),
     path('submissions/<int:pk>/update-calculation/', ConsultantUpdateCalculationView.as_view(), name='update_calculation'),
+
+    # New: live calculation preview (no save)
+    path('submissions/<int:pk>/live-calculate/', LiveCalculateView.as_view(), name='live_calculate'),
+    # New: payment status (Accounts Division)
+    path('submissions/<int:pk>/payment-status/', PaymentStatusView.as_view(), name='payment_status'),
+    # New: IRD submission upload
+    path('submissions/<int:pk>/ird-upload/', IRDSubmissionUploadView.as_view(), name='ird_upload'),
 
     # Income sections
     path('submissions/<int:submission_id>/income/local-employment/', LocalEmploymentView.as_view()),
@@ -53,6 +66,11 @@ urlpatterns = [
     path('submissions/<int:submission_id>/tax-credits/', TaxCreditsView.as_view()),
     path('submissions/<int:submission_id>/self-assessment/', SelfAssessmentListView.as_view()),
     path('self-assessment/<int:pk>/', SelfAssessmentItemView.as_view()),
+
+    # WHT Certificates (replaces bank balance confirmation — Change 15)
+    path('submissions/<int:submission_id>/wht-certificates/', WHTCertificateListView.as_view()),
+    path('wht-certificates/<int:pk>/', WHTCertificateItemView.as_view()),
+    path('wht-categories/', WHTCategoryListView.as_view(), name='wht_categories'),
 
     # Assets
     path('submissions/<int:submission_id>/assets/immovable/', ImmovablePropertyListView.as_view()),
@@ -84,4 +102,16 @@ urlpatterns = [
     # Consultant-only
     path('archive/', ArchiveTreeView.as_view(), name='archive_tree'),
     path('submissions/<int:pk>/edit-logs/', SubmissionEditLogsView.as_view(), name='edit_logs'),
+
+    # Dashboard drill-down (Change 4)
+    path('dashboard/status/<str:status_key>/', DashboardStatusDetailView.as_view(), name='dashboard_status_detail'),
+    # Portfolio dashboard (Change 7)
+    path('dashboard/portfolio/', PortfolioDashboardView.as_view(), name='portfolio_dashboard'),
+
+    # Access requests (Change 13)
+    path('access-requests/', AccessRequestListView.as_view(), name='access_requests'),
+    path('access-requests/<int:pk>/', AccessRequestDetailView.as_view(), name='access_request_detail'),
+
+    # System settings (Change 12)
+    path('settings/', SystemSettingsView.as_view(), name='system_settings'),
 ]

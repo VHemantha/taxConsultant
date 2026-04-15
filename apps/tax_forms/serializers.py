@@ -7,7 +7,7 @@ from .models import (
     SelfAssessmentPayment, TaxCredits, ImmovableProperty, MotorVehicle,
     BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
     BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
-    SubmissionEditLog,
+    SubmissionEditLog, WHTCertificate, PreviousYearAccessRequest, SystemSettings,
 )
 
 
@@ -155,7 +155,81 @@ class DeclarantDetailsSerializer(serializers.ModelSerializer):
         exclude = ['submission']
 
 
-# ─── Full Submission Serializer ───────────────────────────────────────────────
+# ── WHT Certificates ──────────────────────────────────────────────────────────
+
+class WHTCertificateSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WHTCertificate
+        exclude = ['submission']
+
+    def get_file_url(self, obj):
+        if obj.certificate_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.certificate_file.url)
+            return obj.certificate_file.url
+        return None
+
+
+class WHTCertificateUploadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WHTCertificate
+        fields = ['category', 'amount', 'notes']
+
+    def validate(self, data):
+        request = self.context.get('request')
+        if request and 'certificate_file' in request.FILES:
+            f = request.FILES['certificate_file']
+            if not f.name.lower().endswith('.pdf'):
+                raise serializers.ValidationError('Only PDF files are accepted for WHT certificates.')
+        return data
+
+
+# ── Previous Year Access Requests ─────────────────────────────────────────────
+
+class PreviousYearAccessRequestSerializer(serializers.ModelSerializer):
+    client_email = serializers.EmailField(source='client.email', read_only=True)
+    tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
+    approved_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PreviousYearAccessRequest
+        fields = [
+            'id', 'client', 'client_email', 'tax_year', 'tax_year_label',
+            'requested_at', 'status', 'approved_by', 'approved_by_name',
+            'reviewed_at', 'notes',
+        ]
+        read_only_fields = ['client', 'requested_at', 'approved_by', 'reviewed_at']
+
+    def get_approved_by_name(self, obj):
+        if obj.approved_by:
+            return obj.approved_by.get_full_name() or obj.approved_by.email
+        return None
+
+
+# ── System Settings ───────────────────────────────────────────────────────────
+
+class SystemSettingsSerializer(serializers.ModelSerializer):
+    logo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SystemSettings
+        fields = ['company_name', 'company_tagline', 'company_logo', 'logo_url', 'footer_text', 'updated_at']
+        read_only_fields = ['updated_at']
+
+    def get_logo_url(self, obj):
+        if obj.company_logo:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.company_logo.url)
+            return obj.company_logo.url
+        return None
+
+
+# ── Full Submission Serializer ────────────────────────────────────────────────
 
 class TaxSubmissionSerializer(serializers.ModelSerializer):
     local_employment = LocalEmploymentIncomeSerializer(read_only=True)
@@ -181,9 +255,11 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     disposals = DisposalOfAssetSerializer(many=True, read_only=True)
     liabilities = LiabilitySerializer(many=True, read_only=True)
     declarant_details = DeclarantDetailsSerializer(read_only=True)
+    wht_certificates = WHTCertificateSerializer(many=True, read_only=True)
     tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
     client_name = serializers.SerializerMethodField()
     client_email = serializers.EmailField(source='client.email', read_only=True)
+    payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
 
     class Meta:
         model = TaxSubmission
@@ -200,6 +276,7 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
     tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
     client_name = serializers.SerializerMethodField()
     client_email = serializers.EmailField(source='client.email', read_only=True)
+    payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
 
     class Meta:
         model = TaxSubmission
@@ -208,6 +285,7 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
             'tax_year', 'tax_year_label', 'status',
             'total_assessable_income', 'net_taxable_income',
             'total_tax_credits', 'net_tax_payable',
+            'payment_status', 'payment_status_display',
             'info_request_message',
             'created_at', 'submitted_at', 'confirmed_at',
         ]
