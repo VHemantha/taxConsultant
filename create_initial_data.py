@@ -11,7 +11,7 @@ from datetime import date
 from apps.tax_forms.models import TaxYear
 from apps.authentication.models import CustomUser
 
-# Create Tax Year 2025/2026
+# ── Tax Year 2025/2026 ────────────────────────────────────────────────────────
 tax_year, created = TaxYear.objects.get_or_create(
     year=2026,
     defaults={
@@ -22,25 +22,54 @@ tax_year, created = TaxYear.objects.get_or_create(
         'is_active': True,
     }
 )
-if created:
-    print(f"Created Tax Year: {tax_year.label}")
-else:
-    print(f"Tax Year already exists: {tax_year.label}")
+print(f"{'Created' if created else 'Exists'} Tax Year: {tax_year.label}")
 
-# Create default consultant
-if not CustomUser.objects.filter(email='consultant@taxportal.lk').exists():
-    consultant = CustomUser.objects.create_user(
-        email='consultant@taxportal.lk',
-        username='consultant',
-        first_name='Tax',
-        last_name='Consultant',
-        password='Admin@12345',
-        role='consultant',
-    )
-    print(f"Created consultant: {consultant.email} / password: Admin@12345")
-else:
-    print("Consultant already exists")
+# ── Consultants ───────────────────────────────────────────────────────────────
+CONSULTANTS = [
+    {
+        'email': 'consultant@taxportal.lk',
+        'username': 'consultant',
+        'first_name': 'Tax',
+        'last_name': 'Consultant',
+        'password': 'Admin@12345',
+    },
+    {
+        'email': 'ashan@taxportal.lk',
+        'username': 'ashan',
+        'first_name': 'Ashan',
+        'last_name': 'Perera',
+        'password': 'Admin@12345',
+    },
+    {
+        'email': 'nimal@taxportal.lk',
+        'username': 'nimal',
+        'first_name': 'Nimal',
+        'last_name': 'Silva',
+        'password': 'Admin@12345',
+    },
+    {
+        'email': 'kumari@taxportal.lk',
+        'username': 'kumari',
+        'first_name': 'Kumari',
+        'last_name': 'Fernando',
+        'password': 'Admin@12345',
+    },
+]
+
+for c in CONSULTANTS:
+    if not CustomUser.objects.filter(email=c['email']).exists():
+        user = CustomUser.objects.create_user(
+            email=c['email'],
+            username=c['username'],
+            first_name=c['first_name'],
+            last_name=c['last_name'],
+            password=c['password'],
+            role='consultant',
+        )
+        print(f"Created consultant: {user.email} / {c['password']}")
+    else:
+        print(f"Exists: {c['email']}")
 
 print("\nSetup complete!")
-print("Consultant login: consultant@taxportal.lk / Admin@12345")
-print("Remember to change the default password in production!")
+print("All consultants use password: Admin@12345")
+print("Remember to change default passwords in production!")
