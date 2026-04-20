@@ -59,16 +59,15 @@ class RegisterClientSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        request = self.context['request']
-        if request.user.role == 'super_admin' and not attrs.get('consultant_id'):
-            raise serializers.ValidationError({'consultant_id': 'A consultant must be selected.'})
+        if not attrs.get('consultant_id'):
+            raise serializers.ValidationError({'consultant_id': 'A handler must be selected.'})
         return attrs
 
     def create(self, validated_data):
         request = self.context['request']
         consultant_id = validated_data.pop('consultant_id', None)
 
-        if request.user.role == 'super_admin':
+        if consultant_id:
             consultant = User.objects.get(id=consultant_id)
         else:
             consultant = request.user
