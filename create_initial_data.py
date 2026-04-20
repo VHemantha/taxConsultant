@@ -70,6 +70,31 @@ for c in CONSULTANTS:
     else:
         print(f"Exists: {c['email']}")
 
+# ── Accounts Division ─────────────────────────────────────────────────────────
+ACCOUNTS_USERS = [
+    {
+        'email': 'accounts@taxportal.lk',
+        'username': 'accounts',
+        'first_name': 'Accounts',
+        'last_name': 'Officer',
+        'password': 'Admin@12345',
+    },
+]
+
+for a in ACCOUNTS_USERS:
+    if not CustomUser.objects.filter(email=a['email']).exists():
+        user = CustomUser.objects.create_user(
+            email=a['email'],
+            username=a['username'],
+            first_name=a['first_name'],
+            last_name=a['last_name'],
+            password=a['password'],
+            role='accounts_division',
+        )
+        print(f"Created accounts officer: {user.email} / {a['password']}")
+    else:
+        print(f"Exists: {a['email']}")
+
 # ── Super Admin ───────────────────────────────────────────────────────────────
 SUPER_ADMINS = [
     {

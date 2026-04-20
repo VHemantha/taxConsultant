@@ -344,17 +344,29 @@ class ConfirmCalculationView(APIView):
             profile.status = 'awaiting_confirmation'
             profile.save(update_fields=['status'])
 
-        # Notify client
+        # Notify client — do NOT reveal tax figures; payment must be settled first
         Notification.objects.create(
             recipient=submission.client,
-            title='Tax Calculation Ready for Review',
-            message=f'Your tax calculation for {submission.tax_year.label} is ready. Net Tax Payable: Rs. {result["net_tax_payable"]:,.2f}. Please review and confirm.',
+            title='Payment Required — Tax Return Processed',
+            message=f'Your tax return for {submission.tax_year.label} has been processed. A payment is required to complete the process. Please contact the office for payment details.',
             notification_type='action_required',
             related_submission_id=submission.id,
         )
 
+        # Notify all Accounts Division users that payment will be required
+        client_name = getattr(getattr(submission.client, 'client_profile', None), 'full_name', None) or submission.client.email
+        accounts_users = User.objects.filter(role='accounts_division', is_active=True)
+        for acc_user in accounts_users:
+            Notification.objects.create(
+                recipient=acc_user,
+                title='Payment Pending — New Tax Submission',
+                message=f'Tax submission for {client_name} ({submission.tax_year.label}) has been sent to the client for confirmation. Net Tax Payable: Rs. {result["net_tax_payable"]:,.2f}. Please prepare to confirm payment.',
+                notification_type='action_required',
+                related_submission_id=submission.id,
+            )
+
         return Response({
-            'message': 'Calculation confirmed. Client notified.',
+            'message': 'Calculation confirmed. Client notified. Accounts Division alerted.',
             'calculation': result,
         })
 
@@ -373,26 +385,19 @@ class ClientConfirmView(APIView):
         submission.confirmed_at = timezone.now()
         submission.save()
 
-        # Archive documents
-        _archive_submission(submission)
-
-        # Update client profile
         profile = getattr(request.user, 'client_profile', None)
-        if profile:
-            profile.status = 'archived'
-            profile.save(update_fields=['status'])
 
-        # Notify consultant
+        # Notify consultant — do NOT archive yet; awaiting payment confirmation from Accounts Division
         if profile and profile.assigned_consultant:
             Notification.objects.create(
                 recipient=profile.assigned_consultant,
-                title='Client Confirmed Tax Submission',
-                message=f'{profile.full_name} has confirmed their tax submission for {submission.tax_year.label}. Documents have been archived.',
+                title='Client Confirmed — Awaiting Payment',
+                message=f'{profile.full_name or request.user.email} has confirmed their tax submission for {submission.tax_year.label}. Waiting for Accounts Division to confirm payment before final submission.',
                 notification_type='info',
                 related_submission_id=submission.id,
             )
 
-        return Response({'message': 'Tax submission confirmed and archived successfully.'})
+        return Response({'message': 'Tax submission confirmed. Awaiting payment confirmation from Accounts Division.'})
 
 
 def _archive_submission(submission):
@@ -965,10 +970,96 @@ class PaymentStatusView(APIView):
         submission.payment_updated_by = request.user
         submission.payment_updated_at = timezone.now()
         submission.save(update_fields=['payment_status', 'payment_updated_by', 'payment_updated_at'])
+
+        if new_status == 'paid':
+            profile = getattr(submission.client, 'client_profile', None)
+            client_name = getattr(profile, 'full_name', None) or submission.client.email
+            if profile and profile.assigned_consultant:
+                Notification.objects.create(
+                    recipient=profile.assigned_consultant,
+                    title='Payment Received — Ready to Submit Final Return',
+                    message=f'Payment has been confirmed for {client_name} ({submission.tax_year.label}). You can now submit the final tax return to the client.',
+                    notification_type='success',
+                    related_submission_id=submission.id,
+                )
+
         return Response({
             'payment_status': submission.payment_status,
             'payment_updated_at': submission.payment_updated_at,
         })
+
+
+# ── Accounts Division Queue ───────────────────────────────────────────────────
+
+class AccountsQueueView(APIView):
+    """Submissions awaiting payment confirmation — visible to Accounts Division."""
+    permission_classes = [IsAccountsDivision]
+
+    def get(self, request):
+        submissions = TaxSubmission.objects.filter(
+            status__in=['awaiting_confirmation', 'confirmed'],
+            payment_status='pending',
+        ).select_related('client', 'tax_year', 'reviewed_by')
+        return Response(TaxSubmissionListSerializer(submissions, many=True).data)
+
+
+# ── Final Submit (Consultant → after payment confirmed) ───────────────────────
+
+class FinalSubmitView(APIView):
+    """
+    Consultant submits the final return to the client after payment is confirmed
+    by Accounts Division. Archives documents and notifies client.
+    """
+    permission_classes = [IsConsultant]
+
+    def post(self, request, pk):
+        client_ids = ClientProfile.objects.filter(
+            assigned_consultant=request.user
+        ).values_list('user_id', flat=True)
+
+        try:
+            submission = TaxSubmission.objects.get(id=pk, client_id__in=client_ids)
+        except TaxSubmission.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if submission.status != 'confirmed':
+            return Response(
+                {'error': 'Submission must be in confirmed status before final submission.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if submission.payment_status != 'paid':
+            return Response(
+                {
+                    'error': 'Payment has not been received. Please wait for Accounts Division to confirm payment before submitting.',
+                    'payment_not_received': True,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Archive documents
+        _archive_submission(submission)
+
+        submission.status = 'archived'
+        submission.archived_at = timezone.now()
+        submission.save()
+
+        # Update client profile
+        profile = getattr(submission.client, 'client_profile', None)
+        if profile:
+            profile.status = 'archived'
+            profile.save(update_fields=['status'])
+
+        # Notify client
+        Notification.objects.create(
+            recipient=submission.client,
+            title='Tax Return Submission Complete',
+            message=f'Your tax return for {submission.tax_year.label} has been finalized and all documents have been archived. Payment has been received.',
+            notification_type='success',
+            related_submission_id=submission.id,
+        )
+
+        return Response({'message': 'Tax return finalized and submitted to client.'})
 
 
 # ── IRD Submission Upload ─────────────────────────────────────────────────────
