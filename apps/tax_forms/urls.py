@@ -4,7 +4,7 @@ from .views import (
     SubmitTaxFormView, RequestInfoView, ConfirmCalculationView,
     ClientConfirmView, GeneratePDFView, ConsultantUpdateCalculationView,
     ArchiveTreeView, SubmissionEditLogsView,
-    AccountsQueueView, FinalSubmitView,
+    AccountsQueueView, FinalSubmitView, ClientFinalConfirmView, ArchiveSubmissionView,
     # Income sections
     LocalEmploymentView, ForeignIncomeView, TerminalBenefitView,
     RentIncomeView, InterestIncomeView, DividendIncomeView,
@@ -51,8 +51,12 @@ urlpatterns = [
     path('submissions/<int:pk>/payment-status/', PaymentStatusView.as_view(), name='payment_status'),
     # Accounts Division: queue of submissions pending payment
     path('submissions/accounts-queue/', AccountsQueueView.as_view(), name='accounts_queue'),
-    # Consultant: final submit after payment confirmed
+    # Consultant: send tax computation to client for review (after payment confirmed)
     path('submissions/<int:pk>/final-submit/', FinalSubmitView.as_view(), name='final_submit'),
+    # Client: confirm the tax computation
+    path('submissions/<int:pk>/client-final-confirm/', ClientFinalConfirmView.as_view(), name='client_final_confirm'),
+    # Consultant: mark as complete and archive
+    path('submissions/<int:pk>/archive/', ArchiveSubmissionView.as_view(), name='archive_submission'),
     # New: IRD submission upload
     path('submissions/<int:pk>/ird-upload/', IRDSubmissionUploadView.as_view(), name='ird_upload'),
 

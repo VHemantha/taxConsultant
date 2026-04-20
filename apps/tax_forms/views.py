@@ -1003,12 +1003,12 @@ class AccountsQueueView(APIView):
         return Response(TaxSubmissionListSerializer(submissions, many=True).data)
 
 
-# ── Final Submit (Consultant → after payment confirmed) ───────────────────────
+# ── Final Submit (Consultant → after payment confirmed, sends to client for review) ──
 
 class FinalSubmitView(APIView):
     """
-    Consultant submits the final return to the client after payment is confirmed
-    by Accounts Division. Archives documents and notifies client.
+    Consultant sends the final tax computation to the client for review after
+    Accounts Division has confirmed payment. Client can now see full tax figures.
     """
     permission_classes = [IsConsultant]
 
@@ -1037,29 +1037,105 @@ class FinalSubmitView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Archive documents
+        submission.status = 'awaiting_client_review'
+        submission.save(update_fields=['status', 'updated_at'])
+
+        Notification.objects.create(
+            recipient=submission.client,
+            title='Tax Return Ready for Review',
+            message=(
+                f'Your tax return for {submission.tax_year.label} is ready for your review. '
+                f'Total Assessable Income: Rs. {submission.total_assessable_income:,.2f} | '
+                f'Net Tax Payable: Rs. {submission.net_tax_payable:,.2f}. '
+                f'Please log in and confirm your tax computation.'
+            ),
+            notification_type='info',
+            related_submission_id=submission.id,
+        )
+
+        return Response({'message': 'Tax computation sent to client for review.'})
+
+
+# ── Client Final Confirm (Client confirms the tax computation) ────────────────
+
+class ClientFinalConfirmView(APIView):
+    """Client confirms the full tax computation after payment. Notifies consultant."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            submission = TaxSubmission.objects.get(id=pk, client=request.user)
+        except TaxSubmission.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if submission.status != 'awaiting_client_review':
+            return Response({'error': 'No action required at this stage.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        submission.status = 'client_confirmed'
+        submission.confirmed_at = timezone.now()
+        submission.save(update_fields=['status', 'confirmed_at', 'updated_at'])
+
+        consultant = getattr(getattr(submission.client, 'client_profile', None), 'assigned_consultant', None)
+        if consultant:
+            Notification.objects.create(
+                recipient=consultant,
+                title='Client Confirmed Tax Return',
+                message=(
+                    f'{submission.client.get_full_name()} has confirmed their tax return for '
+                    f'{submission.tax_year.label}. You can now mark it as completed and archive.'
+                ),
+                notification_type='success',
+                related_submission_id=submission.id,
+            )
+
+        return Response({'message': 'Tax return confirmed. Consultant has been notified.'})
+
+
+# ── Archive Submission (Consultant marks complete & archives) ─────────────────
+
+class ArchiveSubmissionView(APIView):
+    """Consultant marks a client-confirmed submission as complete and archives documents."""
+    permission_classes = [IsConsultant]
+
+    def post(self, request, pk):
+        client_ids = ClientProfile.objects.filter(
+            assigned_consultant=request.user
+        ).values_list('user_id', flat=True)
+
+        try:
+            submission = TaxSubmission.objects.get(id=pk, client_id__in=client_ids)
+        except TaxSubmission.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if submission.status != 'client_confirmed':
+            return Response(
+                {'error': 'Submission must be client-confirmed before archiving.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         _archive_submission(submission)
 
         submission.status = 'archived'
         submission.archived_at = timezone.now()
         submission.save()
 
-        # Update client profile
         profile = getattr(submission.client, 'client_profile', None)
         if profile:
             profile.status = 'archived'
             profile.save(update_fields=['status'])
 
-        # Notify client
         Notification.objects.create(
             recipient=submission.client,
-            title='Tax Return Submission Complete',
-            message=f'Your tax return for {submission.tax_year.label} has been finalized and all documents have been archived. Payment has been received.',
+            title='Tax Return Finalised & Archived',
+            message=(
+                f'Your tax return for {submission.tax_year.label} has been finalised. '
+                f'All documents have been archived. Thank you.'
+            ),
             notification_type='success',
             related_submission_id=submission.id,
         )
 
-        return Response({'message': 'Tax return finalized and submitted to client.'})
+        return Response({'message': 'Submission archived successfully.'})
 
 
 # ── IRD Submission Upload ─────────────────────────────────────────────────────

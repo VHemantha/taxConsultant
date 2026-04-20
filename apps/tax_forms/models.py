@@ -42,6 +42,8 @@ class TaxSubmission(models.Model):
         ('calculation_done', 'Calculation Done'),
         ('awaiting_confirmation', 'Awaiting Client Confirmation'),
         ('confirmed', 'Client Confirmed'),
+        ('awaiting_client_review', 'Awaiting Client Review'),
+        ('client_confirmed', 'Client Confirmed (Final)'),
         ('archived', 'Archived'),
     ]
 
