@@ -9,6 +9,7 @@ class CustomUser(AbstractUser):
         ('handling_person', 'Handling Person'), # explicit new role
         ('admin', 'Admin'),
         ('accounts_division', 'Accounts Division'),
+        ('super_admin', 'Super Admin'),
     ]
 
     email = models.EmailField(unique=True)
@@ -50,3 +51,7 @@ class CustomUser(AbstractUser):
     @property
     def is_handling_person(self):
         return self.role in ('consultant', 'handling_person')
+
+    @property
+    def is_super_admin(self):
+        return self.role == 'super_admin'

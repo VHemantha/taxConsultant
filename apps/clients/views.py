@@ -11,14 +11,26 @@ from apps.notifications.models import Notification
 
 User = get_user_model()
 
+CONSULTANT_ROLES = ('consultant', 'handling_person')
+
 
 class IsConsultant(IsAuthenticated):
     def has_permission(self, request, view):
-        return super().has_permission(request, view) and request.user.role == 'consultant'
+        return super().has_permission(request, view) and request.user.role in CONSULTANT_ROLES
+
+
+class IsSuperAdmin(IsAuthenticated):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and request.user.role == 'super_admin'
+
+
+class IsConsultantOrSuperAdmin(IsAuthenticated):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and request.user.role in (*CONSULTANT_ROLES, 'super_admin')
 
 
 class RegisterClientView(APIView):
-    permission_classes = [IsConsultant]
+    permission_classes = [IsConsultantOrSuperAdmin]
 
     def post(self, request):
         serializer = RegisterClientSerializer(data=request.data, context={'request': request})
@@ -27,7 +39,7 @@ class RegisterClientView(APIView):
             Notification.objects.create(
                 recipient=user,
                 title='Welcome to Tax Automation Portal',
-                message=f'Your account has been created. Please log in with your credentials and change your password.',
+                message='Your account has been created. Please log in with your credentials and change your password.',
                 notification_type='info',
             )
             return Response({
@@ -41,15 +53,22 @@ class RegisterClientView(APIView):
 
 class ClientListView(generics.ListAPIView):
     serializer_class = ClientListSerializer
-    permission_classes = [IsConsultant]
+    permission_classes = [IsConsultantOrSuperAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status']
     search_fields = ['full_name', 'tin', 'user__email']
     ordering_fields = ['full_name', 'created_at', 'status']
 
     def get_queryset(self):
+        user = self.request.user
+        if user.role == 'super_admin':
+            consultant_id = self.request.query_params.get('consultant_id')
+            qs = ClientProfile.objects.all().select_related('user', 'assigned_consultant')
+            if consultant_id:
+                qs = qs.filter(assigned_consultant_id=consultant_id)
+            return qs
         return ClientProfile.objects.filter(
-            assigned_consultant=self.request.user
+            assigned_consultant=user
         ).select_related('user')
 
 
@@ -59,10 +78,12 @@ class ClientDetailView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         client_id = self.kwargs.get('pk')
-        if self.request.user.role == 'consultant':
-            return ClientProfile.objects.get(id=client_id, assigned_consultant=self.request.user)
-        else:
-            return self.request.user.client_profile
+        user = self.request.user
+        if user.role in CONSULTANT_ROLES:
+            return ClientProfile.objects.get(id=client_id, assigned_consultant=user)
+        if user.role == 'super_admin':
+            return ClientProfile.objects.get(id=client_id)
+        return user.client_profile
 
     def patch(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)
@@ -90,3 +111,50 @@ class ConsultantDashboardStatsView(APIView):
             'archived': clients.filter(status='archived').count(),
         }
         return Response(stats)
+
+
+class SuperAdminDashboardView(APIView):
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        consultants = User.objects.filter(role__in=CONSULTANT_ROLES, is_active=True)
+        all_clients = ClientProfile.objects.all()
+
+        overall = {
+            'total_consultants': consultants.count(),
+            'total_clients': all_clients.count(),
+            'not_started': all_clients.filter(status='not_started').count(),
+            'in_progress': all_clients.filter(status='in_progress').count(),
+            'pending_review': all_clients.filter(status='pending_review').count(),
+            'awaiting_confirmation': all_clients.filter(status='awaiting_confirmation').count(),
+            'archived': all_clients.filter(status='archived').count(),
+        }
+
+        consultant_stats = []
+        for consultant in consultants:
+            clients = ClientProfile.objects.filter(assigned_consultant=consultant)
+            consultant_stats.append({
+                'id': consultant.id,
+                'name': consultant.get_full_name() or consultant.email,
+                'email': consultant.email,
+                'total_clients': clients.count(),
+                'not_started': clients.filter(status='not_started').count(),
+                'in_progress': clients.filter(status='in_progress').count(),
+                'pending_review': clients.filter(status='pending_review').count(),
+                'awaiting_confirmation': clients.filter(status='awaiting_confirmation').count(),
+                'archived': clients.filter(status='archived').count(),
+            })
+
+        return Response({'overall': overall, 'consultants': consultant_stats})
+
+
+class ConsultantListView(APIView):
+    permission_classes = [IsConsultantOrSuperAdmin]
+
+    def get(self, request):
+        consultants = User.objects.filter(role__in=CONSULTANT_ROLES, is_active=True)
+        data = [
+            {'id': c.id, 'name': c.get_full_name() or c.email, 'email': c.email}
+            for c in consultants
+        ]
+        return Response(data)

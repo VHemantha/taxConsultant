@@ -5,6 +5,8 @@ from .views import (
     ClientDetailView,
     MyProfileView,
     ConsultantDashboardStatsView,
+    SuperAdminDashboardView,
+    ConsultantListView,
 )
 
 urlpatterns = [
@@ -13,4 +15,6 @@ urlpatterns = [
     path('<int:pk>/', ClientDetailView.as_view(), name='client_detail'),
     path('my-profile/', MyProfileView.as_view(), name='my_profile'),
     path('dashboard/stats/', ConsultantDashboardStatsView.as_view(), name='dashboard_stats'),
+    path('super-admin/stats/', SuperAdminDashboardView.as_view(), name='super_admin_stats'),
+    path('consultants/', ConsultantListView.as_view(), name='consultant_list'),
 ]

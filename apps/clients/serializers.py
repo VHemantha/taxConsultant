@@ -40,6 +40,7 @@ class RegisterClientSerializer(serializers.Serializer):
     telephone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     mobile = serializers.CharField(max_length=20, required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
+    consultant_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -51,8 +52,26 @@ class RegisterClientSerializer(serializers.Serializer):
             raise serializers.ValidationError("A user with this username already exists.")
         return value
 
+    def validate_consultant_id(self, value):
+        if value is not None:
+            if not User.objects.filter(id=value, role__in=('consultant', 'handling_person')).exists():
+                raise serializers.ValidationError("Invalid consultant selected.")
+        return value
+
+    def validate(self, attrs):
+        request = self.context['request']
+        if request.user.role == 'super_admin' and not attrs.get('consultant_id'):
+            raise serializers.ValidationError({'consultant_id': 'A consultant must be selected.'})
+        return attrs
+
     def create(self, validated_data):
-        consultant = self.context['request'].user
+        request = self.context['request']
+        consultant_id = validated_data.pop('consultant_id', None)
+
+        if request.user.role == 'super_admin':
+            consultant = User.objects.get(id=consultant_id)
+        else:
+            consultant = request.user
 
         user = User.objects.create_user(
             email=validated_data['email'],
@@ -83,13 +102,21 @@ class RegisterClientSerializer(serializers.Serializer):
 class ClientListSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source='user.email', read_only=True)
     current_submission_status = serializers.SerializerMethodField()
+    consultant_name = serializers.SerializerMethodField()
+    consultant_id = serializers.IntegerField(source='assigned_consultant.id', read_only=True)
 
     class Meta:
         model = ClientProfile
-        fields = ['id', 'email', 'full_name', 'tin', 'status', 'current_submission_status', 'created_at']
+        fields = ['id', 'email', 'full_name', 'tin', 'status', 'current_submission_status',
+                  'created_at', 'consultant_name', 'consultant_id']
 
     def get_current_submission_status(self, obj):
         latest = obj.user.tax_submissions.order_by('-created_at').first()
         if latest:
             return latest.status
+        return None
+
+    def get_consultant_name(self, obj):
+        if obj.assigned_consultant:
+            return obj.assigned_consultant.get_full_name() or obj.assigned_consultant.email
         return None
