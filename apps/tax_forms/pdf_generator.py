@@ -225,8 +225,12 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     _render_two_col_table(elements, income_data, highlight_last=True)
 
     # ── Exempt Income (Change 16) ─────────────────────────────────────────────
+    # Use confirmed value from TaxSubmission; fall back to live DividendIncome.exempt_amount
+    # so the PDF is correct even before calculation is confirmed.
     exempt_div = getattr(submission, 'exempt_dividend_income', None) or Decimal('0.00')
-    if float(exempt_div) > 0 or (di and (di.exempt_amount or 0) > 0):
+    if float(exempt_div) == 0 and di:
+        exempt_div = di.exempt_amount or Decimal('0.00')
+    if float(exempt_div) > 0:
         elements.append(Spacer(1, 4))
         elements.append(Paragraph("EXEMPT INCOME", st['section_title']))
         exempt_data = [
