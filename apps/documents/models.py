@@ -9,7 +9,7 @@ class Document(models.Model):
         ('monthly_salary_slip', 'Monthly Salary Slips'),
         ('tax_direction_letter', 'Tax Direction Letter / Terminal Benefit Confirmation'),
         ('rent_agreement', 'Rent Agreement / WHT Deduction Certificates'),
-        ('bank_balance_confirmation', 'Bank Balance Confirmation / WHT Certificates'),
+        ('bank_balance_confirmation', 'WHT Certificates'),
         ('dividend_certificate', 'Dividend Certificate (Dividend Warrant)'),
         ('partnership_accounts', 'Receipt & Payment Details / Partnership Accounts'),
         ('other_income_proof', 'Other Income Proof Documents'),
