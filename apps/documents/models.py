@@ -24,6 +24,7 @@ class Document(models.Model):
         ('bank_confirmation_letter', 'Bank / Financial Institute Confirmation Letter'),
         # General
         ('supporting_document', 'Supporting Document'),
+        ('final_submission', 'Final Tax Submission Document'),
         ('other', 'Other'),
     ]
 

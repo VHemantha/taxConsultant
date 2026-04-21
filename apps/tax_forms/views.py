@@ -108,10 +108,26 @@ def _log_edit(submission, user, section, action, old_data=None, new_data=None, d
     )
 
 
-class TaxYearListView(generics.ListAPIView):
-    serializer_class = TaxYearSerializer
-    queryset = TaxYear.objects.filter(is_active=True)
+class TaxYearListView(APIView):
+    """
+    Returns tax years visible to the requesting user:
+    - Consultants / admins / super_admin: all years
+    - Clients: active year + any year with an approved access request
+    """
     permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role in ('consultant', 'handling_person', 'admin', 'super_admin', 'accounts_division'):
+            years = TaxYear.objects.all()
+        else:
+            # Client: active year + approved previous years
+            approved_year_ids = PreviousYearAccessRequest.objects.filter(
+                client=user, status='approved'
+            ).values_list('tax_year_id', flat=True)
+            from django.db.models import Q
+            years = TaxYear.objects.filter(Q(is_active=True) | Q(id__in=approved_year_ids))
+        return Response(TaxYearSerializer(years, many=True).data)
 
 
 class TaxSubmissionListCreateView(APIView):
@@ -148,6 +164,17 @@ class TaxSubmissionListCreateView(APIView):
             tax_year = TaxYear.objects.get(id=tax_year_id)
         except TaxYear.DoesNotExist:
             return Response({'error': 'Invalid tax year.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # For non-active years, client must have an approved access request
+        if not tax_year.is_active and request.user.role == 'client':
+            has_access = PreviousYearAccessRequest.objects.filter(
+                client=request.user, tax_year=tax_year, status='approved'
+            ).exists()
+            if not has_access:
+                return Response(
+                    {'error': 'You do not have approved access to this tax year.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         if TaxSubmission.objects.filter(client=request.user, tax_year=tax_year).exists():
             return Response({'error': 'Submission for this tax year already exists.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1094,7 +1121,8 @@ class ClientFinalConfirmView(APIView):
 # ── Archive Submission (Consultant marks complete & archives) ─────────────────
 
 class ArchiveSubmissionView(APIView):
-    """Consultant marks a client-confirmed submission as complete and archives documents."""
+    """Consultant marks a client-confirmed submission as complete and archives documents.
+    Requires a final document to be uploaded (multipart/form-data)."""
     permission_classes = [IsConsultant]
 
     def post(self, request, pk):
@@ -1112,6 +1140,29 @@ class ArchiveSubmissionView(APIView):
                 {'error': 'Submission must be client-confirmed before archiving.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response(
+                {
+                    'error': 'A final document must be uploaded before completing and archiving this submission.',
+                    'requires_document': True,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Save the uploaded document
+        from apps.documents.models import Document
+        Document.objects.create(
+            submission=submission,
+            uploaded_by=request.user,
+            document_type='final_submission',
+            section='general',
+            file=uploaded_file,
+            original_filename=uploaded_file.name,
+            file_size=uploaded_file.size,
+            description=request.data.get('description', 'Final Tax Submission Document'),
+        )
 
         _archive_submission(submission)
 
@@ -1308,12 +1359,37 @@ class AccessRequestDetailView(APIView):
         access_req.save()
 
         # Notify client
+        if new_status == 'approved':
+            msg = (
+                f'Your request to access {access_req.tax_year.label} data has been approved. '
+                f'You can now start your tax submission for that year.'
+            )
+            notification_type = 'success'
+        else:
+            msg = f'Your request to access {access_req.tax_year.label} data has been denied.'
+            notification_type = 'warning'
+
         Notification.objects.create(
             recipient=access_req.client,
-            title='Access Request Update',
-            message=f'Your request to access {access_req.tax_year.label} data has been {new_status}.',
-            notification_type='info',
+            title='Access Request ' + ('Approved' if new_status == 'approved' else 'Denied'),
+            message=msg,
+            notification_type=notification_type,
         )
+
+        # Notify assigned consultant so they can start the form for the client
+        if new_status == 'approved':
+            profile = getattr(access_req.client, 'client_profile', None)
+            if profile and profile.assigned_consultant:
+                Notification.objects.create(
+                    recipient=profile.assigned_consultant,
+                    title='Previous Year Access Approved',
+                    message=(
+                        f'{profile.full_name or access_req.client.email} has been granted access to '
+                        f'{access_req.tax_year.label}. You can now manage their submission for that year.'
+                    ),
+                    notification_type='info',
+                )
+
         return Response(PreviousYearAccessRequestSerializer(access_req).data)
 
 
