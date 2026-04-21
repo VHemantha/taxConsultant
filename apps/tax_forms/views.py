@@ -1217,6 +1217,16 @@ class IRDSubmissionUploadView(APIView):
 
 # ── WHT Certificates ──────────────────────────────────────────────────────────
 
+def _sync_wht_total(submission):
+    """Sum WHT certificate amounts and store in TaxCredits.wht_rent_interest_service."""
+    from django.db.models import Sum
+    from decimal import Decimal
+    total = submission.wht_certificates.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+    tc, _ = TaxCredits.objects.get_or_create(submission=submission)
+    tc.wht_rent_interest_service = total
+    tc.save(update_fields=['wht_rent_interest_service'])
+
+
 class WHTCertificateListView(APIView):
     """List and upload WHT certificates for a submission."""
     permission_classes = [IsAuthenticated]
@@ -1246,6 +1256,7 @@ class WHTCertificateListView(APIView):
                 cert.certificate_file = file
                 cert.original_filename = file.name
                 cert.save(update_fields=['certificate_file', 'original_filename'])
+            _sync_wht_total(submission)
             return Response(
                 WHTCertificateSerializer(cert, context={'request': request}).data,
                 status=status.HTTP_201_CREATED,
@@ -1267,6 +1278,7 @@ class WHTCertificateItemView(APIView):
         if not sub:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         cert.delete()
+        _sync_wht_total(sub)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get(self, request, pk):
