@@ -448,7 +448,7 @@ def _archive_submission(submission):
             shutil.copy2(doc.file.path, dest)
 
     # Generate and save PDF
-    pdf_buffer = generate_tax_submission_pdf(submission)
+    pdf_buffer = generate_tax_submission_pdf(submission, include_assets_liabilities=True)
     pdf_path = os.path.join(archive_path, f'Tax_Return_{year_label}.pdf')
     with open(pdf_path, 'wb') as f:
         f.write(pdf_buffer.read())
@@ -480,7 +480,7 @@ class GeneratePDFView(APIView):
         except TaxSubmission.DoesNotExist:
             raise Http404
 
-        pdf_buffer = generate_tax_submission_pdf(submission)
+        pdf_buffer = generate_tax_submission_pdf(submission, include_assets_liabilities=True)
         filename = f"Tax_Return_{submission.tax_year.label.replace('/', '-')}_{submission.client.email}.pdf"
 
         return FileResponse(
