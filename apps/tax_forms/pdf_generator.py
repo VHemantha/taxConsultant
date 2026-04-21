@@ -344,23 +344,54 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     _render_two_col_table(elements, tc_data, highlight_last=True)
     elements.append(Spacer(1, 6))
 
-    # Balance Tax Payable (prominent — Change 20)
+    # Balance Tax Payable — individual credit descriptions shown above the payable line
     balance_data = [
         ['Gross Tax on Taxable Income', fmt_currency(submission.gross_tax)],
-        ['Less: Total Tax Credits', f'({fmt_currency(submission.total_tax_credits)})'],
-        ['BALANCE TAX PAYABLE', fmt_currency(submission.net_tax_payable)],
     ]
+
+    # Individual tax credit lines
+    tc_bal = getattr(submission, 'tax_credits', None)
+    if tc_bal:
+        if (tc_bal.apit_on_salary or Decimal('0')) > 0:
+            balance_data.append(['  Less: APIT on Salary (T10 Certificate)', f'({fmt_currency(tc_bal.apit_on_salary)})'])
+        if (tc_bal.wht_rent_interest_service or Decimal('0')) > 0:
+            balance_data.append(['  Less: WHT on Rent / Interest / Service Fees', f'({fmt_currency(tc_bal.wht_rent_interest_service)})'])
+        if (tc_bal.partnership_tax_credit or Decimal('0')) > 0:
+            balance_data.append(['  Less: Partnership Tax Credit', f'({fmt_currency(tc_bal.partnership_tax_credit)})'])
+
+    for sap in submission.self_assessment_payments.all():
+        balance_data.append([f'  Less: Self Assessment Payment (Installment {sap.installment_number})', f'({fmt_currency(sap.amount)})'])
+
+    fi_bal = getattr(submission, 'foreign_income', None)
+    if fi_bal and (fi_bal.foreign_tax_paid or Decimal('0')) > 0:
+        balance_data.append(['  Less: Foreign Tax Paid (Credit)', f'({fmt_currency(fi_bal.foreign_tax_paid)})'])
+
+    balance_data.append(['Less: Total Tax Credits', f'({fmt_currency(submission.total_tax_credits)})'])
+    balance_data.append(['BALANCE TAX PAYABLE', fmt_currency(submission.net_tax_payable)])
+
+    last_row = len(balance_data) - 1
+    credit_rows = range(1, last_row)  # rows between Gross Tax and BALANCE TAX PAYABLE
+
     t = Table(balance_data, colWidths=[12 * cm, 6 * cm])
-    t.setStyle(TableStyle([
+    btp_style = [
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 2), (-1, 2), 12),
-        ('BACKGROUND', (0, 2), (-1, 2), YELLOW),
+        ('FONTNAME', (0, last_row), (-1, last_row), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, last_row), (-1, last_row), 12),
+        ('BACKGROUND', (0, last_row), (-1, last_row), YELLOW),
+        # Style the "Less: Total Tax Credits" summary row (second-to-last)
+        ('FONTNAME', (0, last_row - 1), (-1, last_row - 1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, last_row - 1), (-1, last_row - 1), colors.HexColor('#E0E7FF')),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
         ('PADDING', (0, 0), (-1, -1), 7),
-    ]))
+    ]
+    # Indent and grey individual credit description rows
+    for i in credit_rows:
+        if i < last_row - 1:  # skip the "Less: Total Tax Credits" summary row
+            btp_style.append(('TEXTCOLOR', (0, i), (0, i), DARK_GRAY))
+            btp_style.append(('FONTSIZE', (0, i), (-1, i), 9))
+    t.setStyle(TableStyle(btp_style))
     elements.append(t)
     elements.append(Spacer(1, 12))
 
