@@ -6,12 +6,11 @@ from decimal import Decimal, ROUND_HALF_UP
 
 
 TAX_SLABS = [
-    (Decimal('1200000'), Decimal('0.06')),
-    (Decimal('1200000'), Decimal('0.12')),
-    (Decimal('1200000'), Decimal('0.18')),
-    (Decimal('1200000'), Decimal('0.24')),
-    (Decimal('1200000'), Decimal('0.30')),
-    (None, Decimal('0.36')),  # Balance
+    (Decimal('1000000'), Decimal('0.06')),   # First Rs. 1,000,000 @ 6%
+    (Decimal('500000'),  Decimal('0.18')),   # Next Rs. 500,000 @ 18%
+    (Decimal('500000'),  Decimal('0.24')),   # Next Rs. 500,000 @ 24%
+    (Decimal('500000'),  Decimal('0.30')),   # Next Rs. 500,000 @ 30%
+    (None,               Decimal('0.36')),   # Balance @ 36%
 ]
 
 PERSONAL_RELIEF = Decimal('1800000.00')
@@ -32,11 +31,10 @@ def calculate_tax_on_income(taxable_income: Decimal) -> tuple[Decimal, list[dict
     remaining = taxable_income
     slab_breakdown = []
     slab_labels = [
-        'First Rs. 1,200,000 @ 6%',
-        'Next Rs. 1,200,000 @ 12%',
-        'Next Rs. 1,200,000 @ 18%',
-        'Next Rs. 1,200,000 @ 24%',
-        'Next Rs. 1,200,000 @ 30%',
+        'First Rs. 1,000,000 @ 6%',
+        'Next Rs. 500,000 @ 18%',
+        'Next Rs. 500,000 @ 24%',
+        'Next Rs. 500,000 @ 30%',
         'Balance @ 36%',
     ]
 
