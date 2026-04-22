@@ -33,6 +33,7 @@ from .views import (
     DashboardStatusDetailView, PortfolioDashboardView,
     SystemSettingsView,
     SendAssessmentFormView,
+    SendAssessmentFormsBulkView,
 )
 
 urlpatterns = [
@@ -127,4 +128,5 @@ urlpatterns = [
 
     # Cyclic assessment year form dispatch
     path('send-form/', SendAssessmentFormView.as_view(), name='send_assessment_form'),
+    path('send-forms-bulk/', SendAssessmentFormsBulkView.as_view(), name='send_assessment_forms_bulk'),
 ]

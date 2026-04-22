@@ -1699,6 +1699,88 @@ class SendAssessmentFormView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class SendAssessmentFormsBulkView(APIView):
+    """
+    Consultant sends assessment forms for multiple years at once.
+    Accepts client_profile_id + tax_year_ids[]. Returns per-year results.
+    """
+    permission_classes = [IsConsultant]
+
+    def post(self, request):
+        from apps.clients.models import ClientAssessmentYear
+
+        client_profile_id = request.data.get('client_profile_id')
+        tax_year_ids = request.data.get('tax_year_ids', [])
+
+        if not client_profile_id or not tax_year_ids:
+            return Response(
+                {'error': 'client_profile_id and tax_year_ids are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            profile = ClientProfile.objects.get(pk=client_profile_id)
+        except ClientProfile.DoesNotExist:
+            return Response({'error': 'Client not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        sent = []
+        skipped = []
+        errors = []
+
+        for year_id in tax_year_ids:
+            try:
+                tax_year = TaxYear.objects.get(pk=year_id)
+            except TaxYear.DoesNotExist:
+                errors.append({'year_id': year_id, 'error': 'Tax year not found.'})
+                continue
+
+            if TaxSubmission.objects.filter(client=profile.user, tax_year=tax_year).exists():
+                skipped.append({'year_id': year_id, 'year_label': tax_year.label, 'reason': 'Already exists'})
+                continue
+
+            prev = TaxSubmission.objects.filter(
+                client=profile.user
+            ).exclude(tax_year=tax_year).order_by('-tax_year__year').first()
+
+            new_sub = TaxSubmission.objects.create(
+                client=profile.user,
+                tax_year=tax_year,
+                status='draft',
+            )
+
+            if prev:
+                _prefill_from_previous(new_sub, prev)
+
+            ClientAssessmentYear.objects.filter(
+                client=profile.user, tax_year=tax_year
+            ).update(form_sent=True)
+
+            Notification.objects.create(
+                recipient=profile.user,
+                title=f'Tax Return Form Ready — {tax_year.label}',
+                message=(
+                    f'Your {tax_year.label} income tax return form is ready. '
+                    f'Please log in, review the pre-filled details, complete the form, and submit.'
+                ),
+                notification_type='action_required',
+                related_submission_id=new_sub.id,
+            )
+
+            sent.append({
+                'year_id': year_id,
+                'year_label': tax_year.label,
+                'submission_id': new_sub.id,
+                'prefilled': prev is not None,
+            })
+
+        return Response({
+            'sent': sent,
+            'skipped': skipped,
+            'errors': errors,
+            'message': f'{len(sent)} form(s) sent to {profile.full_name}.',
+        }, status=status.HTTP_201_CREATED)
+
+
 # ── System Settings (Change 12) ───────────────────────────────────────────────
 
 class SystemSettingsView(APIView):
