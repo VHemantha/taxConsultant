@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 
-from .models import ClientProfile
+from .models import ClientProfile, ClientAssessmentYear
 from .serializers import ClientProfileSerializer, RegisterClientSerializer, ClientListSerializer
 from apps.notifications.models import Notification
 
@@ -158,3 +158,66 @@ class ConsultantListView(APIView):
             for c in consultants
         ]
         return Response(data)
+
+
+class ClientAssessmentYearsView(APIView):
+    """GET/POST assessment years assigned to a client."""
+    permission_classes = [IsConsultantOrSuperAdmin]
+
+    def _get_profile(self, pk, user):
+        try:
+            if user.role == 'super_admin':
+                return ClientProfile.objects.get(pk=pk)
+            return ClientProfile.objects.get(pk=pk, assigned_consultant=user)
+        except ClientProfile.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        from apps.tax_forms.models import TaxSubmission
+        profile = self._get_profile(pk, request.user)
+        if not profile:
+            return Response({'error': 'Client not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        assignments = ClientAssessmentYear.objects.filter(
+            client=profile.user
+        ).select_related('tax_year')
+
+        data = []
+        for a in assignments:
+            submission = TaxSubmission.objects.filter(
+                client=profile.user, tax_year=a.tax_year
+            ).first()
+            data.append({
+                'id': a.id,
+                'year_id': a.tax_year.id,
+                'year_label': a.tax_year.label,
+                'year': a.tax_year.year,
+                'assessment_year_start': a.tax_year.assessment_year_start,
+                'form_sent': a.form_sent,
+                'notification_sent': a.notification_sent,
+                'assigned_at': a.assigned_at,
+                'submission_id': submission.id if submission else None,
+                'submission_status': submission.status if submission else None,
+            })
+        return Response(data)
+
+    def post(self, request, pk):
+        from apps.tax_forms.models import TaxYear
+        profile = self._get_profile(pk, request.user)
+        if not profile:
+            return Response({'error': 'Client not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        year_ids = request.data.get('year_ids', [])
+        if not year_ids:
+            return Response({'error': 'year_ids is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        years = TaxYear.objects.filter(id__in=year_ids)
+        assigned = []
+        for year in years:
+            obj, created = ClientAssessmentYear.objects.get_or_create(
+                client=profile.user, tax_year=year,
+                defaults={'assigned_by': request.user}
+            )
+            assigned.append({'year_id': year.id, 'year_label': year.label, 'created': created})
+
+        return Response({'assigned': assigned}, status=status.HTTP_201_CREATED)

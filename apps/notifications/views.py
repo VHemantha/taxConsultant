@@ -8,12 +8,57 @@ from .models import Notification
 from .serializers import NotificationSerializer
 from apps.clients.models import ClientProfile
 
+CONSULTANT_ROLES = ('consultant', 'handling_person', 'admin', 'super_admin')
+
+
+def _check_year_start_notifications(consultant):
+    """
+    Lazy check: for each client assessment year whose start date has passed
+    and no notification sent yet, create a consultant notification.
+    Called on every notification list fetch — idempotent via notification_sent flag.
+    """
+    from apps.clients.models import ClientAssessmentYear
+    today = timezone.now().date()
+
+    pending = ClientAssessmentYear.objects.filter(
+        assigned_by=consultant,
+        notification_sent=False,
+        form_sent=False,
+        tax_year__assessment_year_start__lte=today,
+    ).select_related('client__client_profile', 'tax_year')
+
+    for assignment in pending:
+        try:
+            profile = assignment.client.client_profile
+            client_name = profile.full_name
+            client_profile_id = profile.id
+        except Exception:
+            client_name = assignment.client.get_full_name() or assignment.client.email
+            client_profile_id = None
+
+        Notification.objects.create(
+            recipient=consultant,
+            title=f'Assessment Year Started — {client_name}',
+            message=(
+                f'The {assignment.tax_year.label} assessment year has started for '
+                f'{client_name}. Send the tax return form to begin the filing process.'
+            ),
+            notification_type='action_required',
+            related_client_id=client_profile_id,
+            related_year_id=assignment.tax_year.id,
+        )
+        assignment.notification_sent = True
+        assignment.save(update_fields=['notification_sent'])
+
 
 class NotificationListView(generics.ListAPIView):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        if self.request.user.role in CONSULTANT_ROLES:
+            _check_year_start_notifications(self.request.user)
+
         qs = Notification.objects.filter(recipient=self.request.user)
         unread_only = self.request.query_params.get('unread', None)
         if unread_only == 'true':

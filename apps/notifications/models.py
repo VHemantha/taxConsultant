@@ -20,6 +20,8 @@ class Notification(models.Model):
     notification_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='info')
     is_read = models.BooleanField(default=False)
     related_submission_id = models.IntegerField(null=True, blank=True)
+    related_client_id = models.IntegerField(null=True, blank=True)   # ClientProfile.id
+    related_year_id = models.IntegerField(null=True, blank=True)     # TaxYear.id
     created_at = models.DateTimeField(auto_now_add=True)
     read_at = models.DateTimeField(null=True, blank=True)
 

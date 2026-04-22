@@ -41,6 +41,9 @@ class RegisterClientSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=20, required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
     consultant_id = serializers.IntegerField(required=False, allow_null=True)
+    assessment_year_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=True
+    )
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -64,8 +67,12 @@ class RegisterClientSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
+        from apps.clients.models import ClientAssessmentYear
+        from apps.tax_forms.models import TaxYear
+
         request = self.context['request']
         consultant_id = validated_data.pop('consultant_id', None)
+        assessment_year_ids = validated_data.pop('assessment_year_ids', [])
 
         if consultant_id:
             consultant = User.objects.get(id=consultant_id)
@@ -94,6 +101,14 @@ class RegisterClientSerializer(serializers.Serializer):
             mobile=validated_data.get('mobile', ''),
             address=validated_data.get('address', ''),
         )
+
+        if assessment_year_ids:
+            years = TaxYear.objects.filter(id__in=assessment_year_ids)
+            for year in years:
+                ClientAssessmentYear.objects.get_or_create(
+                    client=user, tax_year=year,
+                    defaults={'assigned_by': consultant}
+                )
 
         return user, profile
 

@@ -1505,6 +1505,200 @@ class PortfolioDashboardView(APIView):
         return Response(result)
 
 
+# ── Assessment Year Cyclic Process ───────────────────────────────────────────
+
+def _prefill_from_previous(new_submission, prev_submission):
+    """
+    Copy carry-forward data from the previous year's submission to the new one.
+    Assets: description/name/type/acquisition date/cost — NOT market value or balances.
+    Liabilities: description/security/commencement date/original amount — NOT current balance.
+    Declarant: all fields.
+    """
+    from decimal import Decimal
+
+    # Declarant Details — full carry-forward
+    if hasattr(prev_submission, 'declarant_details'):
+        dd = prev_submission.declarant_details
+        DeclarantDetails.objects.create(
+            submission=new_submission,
+            full_name=dd.full_name,
+            telephone=dd.telephone,
+            mobile=dd.mobile,
+            email=dd.email,
+            nic_passport=dd.nic_passport,
+            tin=dd.tin,
+            pin=dd.pin,
+        )
+
+    # Immovable Properties — name/date/cost, market_value reset to 0
+    for a in prev_submission.immovable_properties.all():
+        ImmovableProperty.objects.create(
+            submission=new_submission,
+            situation_of_property=a.situation_of_property,
+            date_of_acquisition=a.date_of_acquisition,
+            cost=a.cost,
+            market_value=Decimal('0.00'),
+            order=a.order,
+        )
+
+    # Motor Vehicles — all fields (no separate cost vs market value)
+    for v in prev_submission.motor_vehicles.all():
+        MotorVehicle.objects.create(
+            submission=new_submission,
+            description=v.description,
+            registration_no=v.registration_no,
+            date_of_acquisition=v.date_of_acquisition,
+            cost_market_value=v.cost_market_value,
+            order=v.order,
+        )
+
+    # Bank Balances — bank name + account no; amounts reset to 0 (change each year)
+    for b in prev_submission.bank_balances.all():
+        BankBalance.objects.create(
+            submission=new_submission,
+            bank_name=b.bank_name,
+            account_no=b.account_no,
+            amount_invested=Decimal('0.00'),
+            interest=Decimal('0.00'),
+            balance=Decimal('0.00'),
+            order=b.order,
+        )
+
+    # Shares — description/count/date/cost; net_dividend reset (earned each year)
+    for s in prev_submission.shares_stocks.all():
+        SharesStocks.objects.create(
+            submission=new_submission,
+            description=s.description,
+            no_of_shares=s.no_of_shares,
+            date_of_acquisition=s.date_of_acquisition,
+            cost_market_value=s.cost_market_value,
+            net_dividend_income=Decimal('0.00'),
+            order=s.order,
+        )
+
+    # Gold/Jewellery — description + value carried forward
+    if hasattr(prev_submission, 'gold_jewellery'):
+        g = prev_submission.gold_jewellery
+        GoldSilverJewellery.objects.create(
+            submission=new_submission,
+            description=g.description,
+            value=g.value,
+        )
+
+    # Loans Given — carry forward as-is
+    for ln in prev_submission.loans_given.all():
+        LoansGiven.objects.create(
+            submission=new_submission,
+            borrower_name=ln.borrower_name,
+            amount=ln.amount,
+            notes=ln.notes,
+        )
+
+    # Business Properties — name only; account balances reset (change each year)
+    for b in prev_submission.business_properties.all():
+        BusinessProperty.objects.create(
+            submission=new_submission,
+            name_of_business=b.name_of_business,
+            current_account_balance=Decimal('0.00'),
+            capital_account_balance=Decimal('0.00'),
+            order=b.order,
+        )
+
+    # Other Assets — carry forward
+    for o in prev_submission.other_assets.all():
+        OtherAsset.objects.create(
+            submission=new_submission,
+            description=o.description,
+            acquisition_type=o.acquisition_type,
+            date_of_acquisition=o.date_of_acquisition,
+            cost_value=o.cost_value,
+            order=o.order,
+        )
+
+    # Liabilities — description/security/commencement date/original amount
+    # amount_as_at_date and amount_repaid reset (updated each year)
+    for lib in prev_submission.liabilities.all():
+        Liability.objects.create(
+            submission=new_submission,
+            description=lib.description,
+            security_on_liability=lib.security_on_liability,
+            date_of_commencement=lib.date_of_commencement,
+            original_amount=lib.original_amount,
+            amount_as_at_date=Decimal('0.00'),
+            amount_repaid_during_year=Decimal('0.00'),
+            order=lib.order,
+        )
+
+
+class SendAssessmentFormView(APIView):
+    """
+    Consultant sends the assessment year form to a client.
+    Creates a new TaxSubmission pre-filled with previous year's carry-forward data.
+    """
+    permission_classes = [IsConsultant]
+
+    def post(self, request):
+        from apps.clients.models import ClientAssessmentYear
+
+        client_profile_id = request.data.get('client_profile_id')
+        tax_year_id = request.data.get('tax_year_id')
+
+        if not client_profile_id or not tax_year_id:
+            return Response(
+                {'error': 'client_profile_id and tax_year_id are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            profile = ClientProfile.objects.get(pk=client_profile_id)
+            tax_year = TaxYear.objects.get(pk=tax_year_id)
+        except (ClientProfile.DoesNotExist, TaxYear.DoesNotExist):
+            return Response({'error': 'Invalid client or tax year.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if TaxSubmission.objects.filter(client=profile.user, tax_year=tax_year).exists():
+            return Response(
+                {'error': 'A submission already exists for this client and year.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Find most recent previous submission to pre-fill from
+        prev = TaxSubmission.objects.filter(
+            client=profile.user
+        ).exclude(tax_year=tax_year).order_by('-tax_year__year').first()
+
+        new_sub = TaxSubmission.objects.create(
+            client=profile.user,
+            tax_year=tax_year,
+            status='draft',
+        )
+
+        if prev:
+            _prefill_from_previous(new_sub, prev)
+
+        # Mark form_sent on assignment record
+        ClientAssessmentYear.objects.filter(
+            client=profile.user, tax_year=tax_year
+        ).update(form_sent=True)
+
+        # Notify client
+        Notification.objects.create(
+            recipient=profile.user,
+            title=f'Tax Return Form Ready — {tax_year.label}',
+            message=(
+                f'Your {tax_year.label} income tax return form is ready. '
+                f'Please log in, review the pre-filled details, complete the form, and submit.'
+            ),
+            notification_type='action_required',
+            related_submission_id=new_sub.id,
+        )
+
+        return Response({
+            'submission_id': new_sub.id,
+            'prefilled': prev is not None,
+            'message': f'Form sent to {profile.full_name} for {tax_year.label}.',
+        }, status=status.HTTP_201_CREATED)
+
+
 # ── System Settings (Change 12) ───────────────────────────────────────────────
 
 class SystemSettingsView(APIView):

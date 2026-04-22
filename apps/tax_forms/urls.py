@@ -32,6 +32,7 @@ from .views import (
     AccessRequestListView, AccessRequestDetailView,
     DashboardStatusDetailView, PortfolioDashboardView,
     SystemSettingsView,
+    SendAssessmentFormView,
 )
 
 urlpatterns = [
@@ -123,4 +124,7 @@ urlpatterns = [
 
     # System settings (Change 12)
     path('settings/', SystemSettingsView.as_view(), name='system_settings'),
+
+    # Cyclic assessment year form dispatch
+    path('send-form/', SendAssessmentFormView.as_view(), name='send_assessment_form'),
 ]
