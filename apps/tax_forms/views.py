@@ -471,13 +471,19 @@ class GeneratePDFView(APIView):
 
     def get(self, request, pk):
         try:
-            if request.user.role == 'consultant':
+            if request.user.role in ('consultant', 'super_admin', 'admin', 'accounts_division'):
                 client_ids = ClientProfile.objects.filter(
                     assigned_consultant=request.user
                 ).values_list('user_id', flat=True)
                 submission = TaxSubmission.objects.get(id=pk, client_id__in=client_ids)
             else:
                 submission = TaxSubmission.objects.get(id=pk, client=request.user)
+                # Clients may only download after payment is confirmed by Accounts Division
+                if submission.payment_status != 'paid':
+                    return Response(
+                        {'error': 'The PDF will be available once Accounts Division confirms your payment.'},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
         except TaxSubmission.DoesNotExist:
             raise Http404
 
