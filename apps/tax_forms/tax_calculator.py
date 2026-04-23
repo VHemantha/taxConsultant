@@ -16,6 +16,7 @@ TAX_SLABS = [
 PERSONAL_RELIEF = Decimal('1800000.00')
 SOLAR_MAX = Decimal('600000.00')
 RENT_RELIEF_RATE = Decimal('0.25')
+FOREIGN_INCOME_TAX_RATE = Decimal('0.15')
 
 
 def calculate_tax_on_income(taxable_income: Decimal) -> tuple[Decimal, list[dict]]:
@@ -120,9 +121,13 @@ def calculate_full_tax(submission) -> dict:
     if hasattr(submission, 'other_income'):
         other_inc = submission.other_income.amount or Decimal('0.00')
 
-    # Total Assessable Income EXCLUDES exempt dividends (Change 16)
+    # Foreign income taxed at flat 15% — excluded from normal TAI/slabs
+    foreign_tax_gross = (foreign * FOREIGN_INCOME_TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    foreign_tax_net = max(Decimal('0.00'), foreign_tax_gross - foreign_tax_paid)
+
+    # Total Assessable Income EXCLUDES exempt dividends (Change 16) and foreign income
     total_assessable = (
-        local_emp + foreign + terminal + rent_gross +
+        local_emp + terminal + rent_gross +
         interest + dividend_taxable + sole_prop + other_inc
     )
 
@@ -171,31 +176,35 @@ def calculate_full_tax(submission) -> dict:
     for sap in submission.self_assessment_payments.all():
         self_assessment_total += sap.amount or Decimal('0.00')
 
-    # Foreign tax paid counts as a credit (Change 18)
-    total_credits = apit + wht + partnership_credit + self_assessment_total + foreign_tax_paid
+    total_credits = apit + wht + partnership_credit + self_assessment_total
 
     # ── 6. Net Tax Payable ───────────────────────────────────────────────────
 
-    net_tax = gross_tax - total_credits
-    if net_tax < 0:
-        net_tax = Decimal('0.00')
+    normal_tax = gross_tax - total_credits
+    if normal_tax < 0:
+        normal_tax = Decimal('0.00')
+    # Foreign income taxed at flat 15%; add to normal tax for final payable
+    net_tax = normal_tax + foreign_tax_net
 
     return {
         'total_assessable_income': total_assessable,
-        'exempt_dividend_income': dividend_exempt,   # Change 16
+        'exempt_dividend_income': dividend_exempt,
         'total_qualifying_payments': total_qualifying,
         'personal_relief': personal_relief,
-        'rent_relief': rent_relief,                  # Change 17: auto-calculated
+        'rent_relief': rent_relief,
         'net_taxable_income': net_taxable,
         'gross_tax': gross_tax,
         'total_tax_credits': total_credits,
+        'foreign_income': foreign,
+        'foreign_income_tax': foreign_tax_net,      # net foreign tax (after foreign_tax_paid credit)
         'net_tax_payable': net_tax,
-        'slab_breakdown': slab_breakdown,            # Change 19
-        # Detailed breakdown for reference / PDF
+        'slab_breakdown': slab_breakdown,
         'breakdown': {
             'local_employment': local_emp,
             'foreign_income': foreign,
             'foreign_tax_paid': foreign_tax_paid,
+            'foreign_tax_gross': foreign_tax_gross,
+            'foreign_tax_net': foreign_tax_net,
             'terminal_benefit': terminal,
             'rent_income': rent_gross,
             'interest_income': interest,

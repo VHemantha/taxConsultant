@@ -75,6 +75,7 @@ class TaxSubmission(models.Model):
     net_taxable_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     gross_tax = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_tax_credits = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    foreign_income_tax = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     net_tax_payable = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     # Slab breakdown stored as JSON after each calculation
     slab_breakdown = models.JSONField(null=True, blank=True)

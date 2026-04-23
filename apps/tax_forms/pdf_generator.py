@@ -335,11 +335,6 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     for sap in submission.self_assessment_payments.all():
         tc_data.append([f'Self Assessment Payment (Installment {sap.installment_number})', fmt_currency(sap.amount)])
 
-    # Foreign tax paid credit (Change 18)
-    fi = getattr(submission, 'foreign_income', None)
-    if fi and fi.foreign_tax_paid > 0:
-        tc_data.append(['Foreign Tax Paid (Credit)', fmt_currency(fi.foreign_tax_paid)])
-
     tc_data.append(['TOTAL TAX CREDITS', fmt_currency(submission.total_tax_credits)])
     _render_two_col_table(elements, tc_data, highlight_last=True)
     elements.append(Spacer(1, 6))
@@ -362,17 +357,26 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     for sap in submission.self_assessment_payments.all():
         balance_data.append([f'  Less: Self Assessment Payment (Installment {sap.installment_number})', f'({fmt_currency(sap.amount)})'])
 
-    fi_bal = getattr(submission, 'foreign_income', None)
-    if fi_bal and (fi_bal.foreign_tax_paid or Decimal('0')) > 0:
-        balance_data.append(['  Less: Foreign Tax Paid (Credit)', f'({fmt_currency(fi_bal.foreign_tax_paid)})'])
-
+    total_credits_row = len(balance_data)
     balance_data.append(['Less: Total Tax Credits', f'({fmt_currency(submission.total_tax_credits)})'])
+
+    # Foreign income tax at flat 15% — shown separately above balance
+    foreign_income_tax = submission.foreign_income_tax or Decimal('0')
+    fi_bal = getattr(submission, 'foreign_income', None)
+    net_foreign_row = None
+    if fi_bal:
+        fi_amount = (fi_bal.employment_service_fee or Decimal('0')) + (fi_bal.other_foreign_income or Decimal('0'))
+        fi_paid = fi_bal.foreign_tax_paid or Decimal('0')
+        if fi_amount > 0:
+            balance_data.append([f'  Add: Foreign Income Tax @ 15% (on Rs. {fmt_currency(fi_amount)})', fmt_currency(fi_amount * Decimal("0.15"))])
+            if fi_paid > 0:
+                balance_data.append([f'  Less: Foreign Tax Paid (Credit)', f'({fmt_currency(fi_paid)})'])
+            net_foreign_row = len(balance_data)
+            balance_data.append(['Net Foreign Income Tax Payable', fmt_currency(foreign_income_tax)])
+
+    last_row = len(balance_data)
     balance_data.append(['BALANCE TAX PAYABLE', fmt_currency(submission.net_tax_payable)])
 
-    last_row = len(balance_data) - 1
-    credit_rows = range(1, last_row)  # rows between Gross Tax and BALANCE TAX PAYABLE
-
-    t = Table(balance_data, colWidths=[12 * cm, 6 * cm])
     btp_style = [
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
@@ -380,17 +384,21 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
         ('FONTNAME', (0, last_row), (-1, last_row), 'Helvetica-Bold'),
         ('FONTSIZE', (0, last_row), (-1, last_row), 12),
         ('BACKGROUND', (0, last_row), (-1, last_row), YELLOW),
-        # Style the "Less: Total Tax Credits" summary row (second-to-last)
-        ('FONTNAME', (0, last_row - 1), (-1, last_row - 1), 'Helvetica-Bold'),
-        ('BACKGROUND', (0, last_row - 1), (-1, last_row - 1), colors.HexColor('#E0E7FF')),
+        ('FONTNAME', (0, total_credits_row), (-1, total_credits_row), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, total_credits_row), (-1, total_credits_row), colors.HexColor('#E0E7FF')),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
         ('PADDING', (0, 0), (-1, -1), 7),
     ]
-    # Indent and grey individual credit description rows
-    for i in credit_rows:
-        if i < last_row - 1:  # skip the "Less: Total Tax Credits" summary row
+    if net_foreign_row is not None:
+        btp_style.append(('FONTNAME', (0, net_foreign_row), (-1, net_foreign_row), 'Helvetica-Bold'))
+        btp_style.append(('BACKGROUND', (0, net_foreign_row), (-1, net_foreign_row), colors.HexColor('#FFF3CD')))
+    # Grey out individual detail rows
+    for i in range(1, last_row):
+        if i not in (total_credits_row, net_foreign_row):
             btp_style.append(('TEXTCOLOR', (0, i), (0, i), DARK_GRAY))
             btp_style.append(('FONTSIZE', (0, i), (-1, i), 9))
+
+    t = Table(balance_data, colWidths=[12 * cm, 6 * cm])
     t.setStyle(TableStyle(btp_style))
     elements.append(t)
     elements.append(Spacer(1, 12))

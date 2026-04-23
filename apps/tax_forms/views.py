@@ -358,6 +358,7 @@ class ConfirmCalculationView(APIView):
         submission.net_taxable_income = result['net_taxable_income']
         submission.gross_tax = result['gross_tax']
         submission.total_tax_credits = result['total_tax_credits']
+        submission.foreign_income_tax = result['foreign_income_tax']
         submission.net_tax_payable = result['net_tax_payable']
         submission.slab_breakdown = result['slab_breakdown']
         submission.status = 'awaiting_confirmation'
@@ -859,7 +860,8 @@ class ConsultantUpdateCalculationView(APIView):
 
         allowed = [
             'total_assessable_income', 'total_qualifying_payments', 'personal_relief',
-            'rent_relief', 'net_taxable_income', 'gross_tax', 'total_tax_credits', 'net_tax_payable',
+            'rent_relief', 'net_taxable_income', 'gross_tax', 'total_tax_credits',
+            'foreign_income_tax', 'net_tax_payable',
         ]
         changed = {f: request.data[f] for f in allowed if f in request.data}
         old_data = {f: str(getattr(submission, f, '')) for f in changed}
