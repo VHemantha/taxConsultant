@@ -125,7 +125,7 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
         buffer, pagesize=A4,
         rightMargin=1.5 * cm, leftMargin=1.5 * cm,
         topMargin=2 * cm, bottomMargin=2 * cm,
-        title=f"Tax Submission - {submission.tax_year.label}",
+        title=f"DPR-TMS | Tax Return - {submission.tax_year.label}",
     )
 
     st = _build_styles()
@@ -133,9 +133,9 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     elements = []
 
     # ── Company Header (Change 12) ────────────────────────────────────────────
-    company_name = sys_settings.company_name if sys_settings else 'TAX AUTOMATION PORTAL'
-    company_tagline = sys_settings.company_tagline if sys_settings else 'PERSONAL INCOME TAX RETURN'
-    footer_text = sys_settings.footer_text if sys_settings else 'Tax Automation Portal | Confidential'
+    company_name = sys_settings.company_name if sys_settings else 'DPR-TMS'
+    company_tagline = sys_settings.company_tagline if sys_settings else 'DPR Tax Management System | PERSONAL INCOME TAX RETURN'
+    footer_text = sys_settings.footer_text if sys_settings else 'DPR-TMS | Confidential'
 
     # Logo (if uploaded)
     if sys_settings and sys_settings.company_logo:
