@@ -503,6 +503,60 @@ class SystemSettings(models.Model):
         return self.company_name
 
 
+# ─── CASH FLOW / RECEIPTS & PAYMENTS STATEMENT ───────────────────────────────
+
+class CashFlowStatement(models.Model):
+    """Receipts & Payments (cash flow) statement for the assessment year."""
+    submission = models.OneToOneField(
+        TaxSubmission, on_delete=models.CASCADE, related_name='cash_flow'
+    )
+
+    # Opening balances (1 April)
+    opening_cash_in_hand = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    opening_favourable_banks = models.JSONField(default=list, blank=True)   # [{bank_name, account_no, amount}]
+    opening_overdraft_banks  = models.JSONField(default=list, blank=True)   # [{bank_name, account_no, amount}]
+
+    # Receipts during the year
+    receipt_employment_income       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_interest_fds            = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_interest_savings        = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_rent_income             = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_tb_securities           = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_sale_shares             = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_dividend_income         = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_drawings_sole_partner   = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_bank_loan               = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_other_loans             = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_sale_land_building      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_sale_motor_vehicle      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_sale_other_assets       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+
+    # Payments during the year
+    payment_purchase_land_building  = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_purchase_motor_vehicle  = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_purchase_other_assets   = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_repayment_bank_loan     = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_lease_rentals           = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_jewellery_gems          = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_other_loans             = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_wht                     = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_income_tax              = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_apit                    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_investment_shares       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_loans_given_others      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+
+    # Closing balances (31 March)
+    closing_cash_in_hand    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    closing_favourable_banks = models.JSONField(default=list, blank=True)
+    closing_overdraft_banks  = models.JSONField(default=list, blank=True)
+
+    # Living expenses
+    living_expenses_year    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        db_table = 'cash_flow_statements'
+
+
 # ─── AUDIT / EDIT LOG ────────────────────────────────────────────────────────
 
 class SubmissionEditLog(models.Model):

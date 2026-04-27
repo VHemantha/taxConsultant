@@ -16,6 +16,7 @@ from .models import (
     BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
     BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
     SubmissionEditLog, WHTCertificate, PreviousYearAccessRequest, SystemSettings,
+    CashFlowStatement,
 )
 from .serializers import (
     SubmissionEditLogSerializer,
@@ -31,6 +32,7 @@ from .serializers import (
     DeclarantDetailsSerializer,
     WHTCertificateSerializer, WHTCertificateUploadSerializer,
     PreviousYearAccessRequestSerializer, SystemSettingsSerializer,
+    CashFlowStatementSerializer,
 )
 from .tax_calculator import calculate_full_tax
 from .pdf_generator import generate_tax_submission_pdf
@@ -624,6 +626,12 @@ class DeclarantDetailsView(SectionUpdateView):
     model_class = DeclarantDetails
     serializer_class = DeclarantDetailsSerializer
     section_name = 'Declarant Details'
+
+
+class CashFlowStatementView(SectionUpdateView):
+    model_class = CashFlowStatement
+    serializer_class = CashFlowStatementSerializer
+    section_name = 'Cash Flow Statement'
 
 
 # ── List/Create/Delete for multi-row sections ─────────────────────────────────

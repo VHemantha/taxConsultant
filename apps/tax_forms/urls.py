@@ -26,6 +26,8 @@ from .views import (
     LiabilityListView, LiabilityItemView,
     # Declarant
     DeclarantDetailsView,
+    # Cash Flow
+    CashFlowStatementView,
     # New views (Phase 2)
     LiveCalculateView, PaymentStatusView, IRDSubmissionUploadView,
     WHTCertificateListView, WHTCertificateItemView, WHTCategoryListView,
@@ -109,6 +111,9 @@ urlpatterns = [
 
     # Declarant
     path('submissions/<int:submission_id>/declarant/', DeclarantDetailsView.as_view()),
+
+    # Cash Flow / Receipts & Payments
+    path('submissions/<int:submission_id>/cash-flow/', CashFlowStatementView.as_view()),
 
     # Consultant-only
     path('archive/', ArchiveTreeView.as_view(), name='archive_tree'),

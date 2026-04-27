@@ -8,6 +8,7 @@ from .models import (
     BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
     BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
     SubmissionEditLog, WHTCertificate, PreviousYearAccessRequest, SystemSettings,
+    CashFlowStatement,
 )
 
 
@@ -155,6 +156,12 @@ class DeclarantDetailsSerializer(serializers.ModelSerializer):
         exclude = ['submission']
 
 
+class CashFlowStatementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashFlowStatement
+        exclude = ['submission']
+
+
 # ── WHT Certificates ──────────────────────────────────────────────────────────
 
 class WHTCertificateSerializer(serializers.ModelSerializer):
@@ -256,6 +263,7 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     liabilities = LiabilitySerializer(many=True, read_only=True)
     declarant_details = DeclarantDetailsSerializer(read_only=True)
     wht_certificates = WHTCertificateSerializer(many=True, read_only=True)
+    cash_flow = CashFlowStatementSerializer(read_only=True)
     tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
     client_name = serializers.SerializerMethodField()
     client_email = serializers.EmailField(source='client.email', read_only=True)
