@@ -8,6 +8,9 @@ from .views import (
     SuperAdminDashboardView,
     ConsultantListView,
     ClientAssessmentYearsView,
+    CreateConsultantView,
+    ConsultantDetailView,
+    TransferClientsView,
 )
 
 urlpatterns = [
@@ -19,4 +22,7 @@ urlpatterns = [
     path('dashboard/stats/', ConsultantDashboardStatsView.as_view(), name='dashboard_stats'),
     path('super-admin/stats/', SuperAdminDashboardView.as_view(), name='super_admin_stats'),
     path('consultants/', ConsultantListView.as_view(), name='consultant_list'),
+    path('consultants/create/', CreateConsultantView.as_view(), name='create_consultant'),
+    path('consultants/<int:pk>/', ConsultantDetailView.as_view(), name='consultant_detail'),
+    path('consultants/transfer/', TransferClientsView.as_view(), name='transfer_clients'),
 ]
