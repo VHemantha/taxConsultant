@@ -90,7 +90,11 @@ def calculate_full_tax(submission) -> dict:
     foreign_tax_paid = Decimal('0.00')
     if hasattr(submission, 'foreign_income'):
         fi = submission.foreign_income
-        foreign = (fi.employment_service_fee or Decimal('0.00')) + (fi.other_foreign_income or Decimal('0.00'))
+        foreign = (
+            (fi.employment_service_fee or Decimal('0.00')) +
+            (fi.foreign_business_income or Decimal('0.00')) +
+            (fi.other_foreign_income or Decimal('0.00'))
+        )
         foreign_tax_paid = fi.foreign_tax_paid or Decimal('0.00')
 
     terminal = Decimal('0.00')

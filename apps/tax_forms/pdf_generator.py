@@ -192,6 +192,8 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     if fi:
         if fi.employment_service_fee:
             income_data.append(['Foreign Employment Income / Service Fee', fmt_currency(fi.employment_service_fee)])
+        if fi.foreign_business_income:
+            income_data.append(['Foreign Business Income', fmt_currency(fi.foreign_business_income)])
         if fi.other_foreign_income:
             income_data.append(['Other Foreign Source Income', fmt_currency(fi.other_foreign_income)])
         if fi.source_country:
@@ -365,7 +367,11 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     fi_bal = getattr(submission, 'foreign_income', None)
     net_foreign_row = None
     if fi_bal:
-        fi_amount = (fi_bal.employment_service_fee or Decimal('0')) + (fi_bal.other_foreign_income or Decimal('0'))
+        fi_amount = (
+            (fi_bal.employment_service_fee or Decimal('0')) +
+            (fi_bal.foreign_business_income or Decimal('0')) +
+            (fi_bal.other_foreign_income or Decimal('0'))
+        )
         fi_paid = fi_bal.foreign_tax_paid or Decimal('0')
         if fi_amount > 0:
             balance_data.append([f'  Add: Foreign Income Tax @ 15% (on Rs. {fmt_currency(fi_amount)})', fmt_currency(fi_amount * Decimal("0.15"))])

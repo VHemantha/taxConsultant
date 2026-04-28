@@ -134,6 +134,7 @@ class ForeignIncome(models.Model):
     submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='foreign_income')
     source_country = models.CharField(max_length=100, blank=True, null=True)
     employment_service_fee = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    foreign_business_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     other_foreign_income = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     foreign_tax_paid = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'),
                                            help_text='Foreign tax already paid — eligible as tax credit')
@@ -146,7 +147,7 @@ class ForeignIncome(models.Model):
 
     @property
     def total(self):
-        return self.employment_service_fee + self.other_foreign_income
+        return self.employment_service_fee + self.foreign_business_income + self.other_foreign_income
 
 
 class TerminalBenefit(models.Model):
