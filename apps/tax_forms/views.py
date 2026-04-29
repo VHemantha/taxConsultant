@@ -1335,8 +1335,12 @@ class AccessRequestListView(APIView):
         if request.user.role not in ('admin', 'consultant', 'handling_person'):
             return Response({'error': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
         requests_qs = PreviousYearAccessRequest.objects.select_related(
-            'client', 'tax_year', 'approved_by'
+            'client', 'client__client_profile', 'tax_year', 'approved_by'
         ).order_by('-requested_at')
+        if request.user.role in ('consultant', 'handling_person'):
+            requests_qs = requests_qs.filter(
+                client__client_profile__assigned_consultant=request.user
+            )
         return Response(PreviousYearAccessRequestSerializer(requests_qs, many=True).data)
 
     def post(self, request):
@@ -1360,6 +1364,22 @@ class AccessRequestListView(APIView):
             obj.reviewed_at = None
             obj.save(update_fields=['status', 'reviewed_at'])
 
+        # Notify assigned consultant about the view request
+        if created or obj.status == 'pending':
+            profile = getattr(request.user, 'client_profile', None)
+            if profile and profile.assigned_consultant:
+                client_display = profile.full_name or request.user.email
+                Notification.objects.create(
+                    recipient=profile.assigned_consultant,
+                    title='Previous Year View Request',
+                    message=(
+                        f'{client_display} has requested access to view their '
+                        f'{tax_year.label} submission. Please review and approve or deny.'
+                    ),
+                    notification_type='action_required',
+                    related_client_id=profile.id,
+                )
+
         return Response(
             PreviousYearAccessRequestSerializer(obj).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -1367,14 +1387,22 @@ class AccessRequestListView(APIView):
 
 
 class AccessRequestDetailView(APIView):
-    """Admin: PATCH to approve or deny an access request."""
-    permission_classes = [IsAdmin]
+    """Consultant/Admin: PATCH to approve or deny a client's view access request."""
+    permission_classes = [IsConsultant]
 
     def patch(self, request, pk):
         try:
-            access_req = PreviousYearAccessRequest.objects.get(id=pk)
+            access_req = PreviousYearAccessRequest.objects.select_related(
+                'client__client_profile', 'tax_year'
+            ).get(id=pk)
         except PreviousYearAccessRequest.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Consultants can only act on their own clients' requests
+        if request.user.role in ('consultant', 'handling_person'):
+            profile = getattr(access_req.client, 'client_profile', None)
+            if not profile or profile.assigned_consultant_id != request.user.id:
+                return Response({'error': 'You can only manage requests for your own clients.'}, status=status.HTTP_403_FORBIDDEN)
 
         new_status = request.data.get('status')
         if new_status not in ('approved', 'denied'):
@@ -1389,12 +1417,12 @@ class AccessRequestDetailView(APIView):
         # Notify client
         if new_status == 'approved':
             msg = (
-                f'Your request to access {access_req.tax_year.label} data has been approved. '
-                f'You can now start your tax submission for that year.'
+                f'Your request to view your {access_req.tax_year.label} submission has been approved. '
+                f'You can now view it from your dashboard.'
             )
             notification_type = 'success'
         else:
-            msg = f'Your request to access {access_req.tax_year.label} data has been denied.'
+            msg = f'Your request to view your {access_req.tax_year.label} submission has been denied.'
             notification_type = 'warning'
 
         Notification.objects.create(

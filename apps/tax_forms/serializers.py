@@ -199,17 +199,24 @@ class WHTCertificateUploadSerializer(serializers.ModelSerializer):
 
 class PreviousYearAccessRequestSerializer(serializers.ModelSerializer):
     client_email = serializers.EmailField(source='client.email', read_only=True)
+    client_name = serializers.SerializerMethodField()
     tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
     approved_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PreviousYearAccessRequest
         fields = [
-            'id', 'client', 'client_email', 'tax_year', 'tax_year_label',
+            'id', 'client', 'client_email', 'client_name', 'tax_year', 'tax_year_label',
             'requested_at', 'status', 'approved_by', 'approved_by_name',
             'reviewed_at', 'notes',
         ]
         read_only_fields = ['client', 'requested_at', 'approved_by', 'reviewed_at']
+
+    def get_client_name(self, obj):
+        profile = getattr(obj.client, 'client_profile', None)
+        if profile:
+            return profile.full_name
+        return obj.client.get_full_name() or obj.client.email
 
     def get_approved_by_name(self, obj):
         if obj.approved_by:
