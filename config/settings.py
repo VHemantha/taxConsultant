@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     # Local apps
     'apps.authentication',
     'apps.clients',
-    'apps.tax_forms',
+    'apps.tax_forms.apps.TaxFormsConfig',
     'apps.documents',
     'apps.notifications',
 ]
