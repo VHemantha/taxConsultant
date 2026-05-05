@@ -290,15 +290,15 @@ def _add_schedule_1(els, st, lei, fi, tb):
     els.append(KeepTogether(_sched_table(hdr, rows, cw, st)))
     els.append(Spacer(1, 3))
 
-    # Cage 111
+    # Cage 105 — total employment income
     els.append(_cage_tbl([
-        _cr(st, 'Total employment income (Rs.)', 111, total_emp, bold=True),
+        _cr(st, 'Total employment income (Rs.)', 105, total_emp, bold=True),
     ]))
     els.append(Spacer(1, 3))
 
-    # Terminal benefits
+    # Terminal benefits — Part I, cage 110
     tb_amt = _D(tb and tb.amount)
-    els.append(_P('Part II : Terminal benefits', st['sec_hdr']))
+    els.append(_P('Terminal benefits', st['sec_hdr']))
     els.append(Spacer(1, 2))
     hdr2 = [
         _P('S/N',             st['tbl_hdr']),
@@ -316,7 +316,25 @@ def _add_schedule_1(els, st, lei, fi, tb):
     els.append(KeepTogether(_sched_table(hdr2, rows2, cw2, st)))
     els.append(Spacer(1, 3))
     els.append(_cage_tbl([
-        _cr(st, 'Tax on terminal benefits (Rs.)', 130, Decimal('0')),
+        _cr(st, 'Tax on terminal benefits (Rs.)', 110, Decimal('0')),
+    ]))
+    els.append(Spacer(1, 3))
+
+    # Part II — Employment income from exempt sources
+    els.append(_P('Part II : Employment income from exempt sources', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    hdr3 = [
+        _P('S/N',                       st['tbl_hdr']),
+        _P('Type',                      st['tbl_hdr_l']),
+        _P('Name of Employer / Source', st['tbl_hdr_l']),
+        _P('Employer TIN',              st['tbl_hdr']),
+        _P('Remuneration (Rs.)',        st['tbl_hdr']),
+    ]
+    cw3 = [UW*0.06, UW*0.18, UW*0.36, UW*0.18, UW*0.22]
+    els.append(KeepTogether(_sched_table(hdr3, [], cw3, st)))
+    els.append(Spacer(1, 3))
+    els.append(_cage_tbl([
+        _cr(st, 'Total employment income from exempt sources (Rs.)', 114, Decimal('0')),
     ]))
     els.append(Spacer(1, 5))
 
@@ -352,19 +370,18 @@ def _add_schedule_2(els, st, spi, fi):
     els.append(_cage_tbl([_cr(st, 'Total from sole proprietorship (Rs.)', 204, sp_amt)]))
     els.append(Spacer(1, 3))
 
-    # Part II — Partnership (empty structure)
-    els.append(_P('Part II : Partnership', st['sec_hdr']))
+    # Part II — Business income from exempt sources
+    els.append(_P('Part II : Business income from exempt sources', st['sec_hdr']))
     els.append(Spacer(1, 2))
     hdr2 = [
-        _P('S/N', st['tbl_hdr']),
-        _P('Name of Partnership', st['tbl_hdr_l']),
-        _P('Partnership TIN', st['tbl_hdr']),
-        _P('Share of Profit / (Loss) (Rs.)', st['tbl_hdr']),
+        _P('S/N',             st['tbl_hdr']),
+        _P('Description',     st['tbl_hdr_l']),
+        _P('Amount (Rs.)',    st['tbl_hdr']),
     ]
-    cw2 = [UW*0.06, UW*0.40, UW*0.22, UW*0.32]
+    cw2 = [UW*0.06, UW*0.62, UW*0.32]
     els.append(KeepTogether(_sched_table(hdr2, [], cw2, st)))
     els.append(Spacer(1, 2))
-    els.append(_cage_tbl([_cr(st, 'Total from partnership (Rs.)', 209, Decimal('0'))]))
+    els.append(_cage_tbl([_cr(st, 'Total business income from exempt sources (Rs.)', 216, Decimal('0'))]))
     els.append(Spacer(1, 3))
 
     # Cage 215 total
@@ -383,38 +400,59 @@ def _add_schedule_3(els, st, ri, ii, di, rent_relief):
     div_taxable = _D(di and di.amount)
     div_exempt  = _D(di and di.exempt_amount)
     rr          = _D(rent_relief)
-    total_inv   = rent_gross + int_amt + div_taxable
+    total_inv   = rent_gross + int_amt   # dividends excluded — reported in Part III
 
+    # Part I — Taxable investment income (rent + interest)
+    els.append(_P('Part I : Investment income (Taxable)', st['sec_hdr']))
+    els.append(Spacer(1, 2))
     hdr = [
-        _P('S/N',            st['tbl_hdr']),
-        _P('Activity Code',  st['tbl_hdr']),
-        _P('Type of Investment Income', st['tbl_hdr_l']),
-        _P('Gains and Profits (Rs.)', st['tbl_hdr']),
+        _P('S/N',                        st['tbl_hdr']),
+        _P('Type of Investment Income',  st['tbl_hdr_l']),
+        _P('Gains and Profits (Rs.)',    st['tbl_hdr']),
     ]
     rows = []
     sno = 1
     if rent_gross > 0:
-        rows.append([_P(str(sno), st['tbl_cell']), _P('311', st['tbl_cell']),
+        rows.append([_P(str(sno), st['tbl_cell']),
                      _P('Rent income (gross)', st['tbl_cell']),
                      _P(_fmt(rent_gross), st['tbl_cell_r'])])
         sno += 1
     if int_amt > 0:
-        rows.append([_P(str(sno), st['tbl_cell']), _P('304', st['tbl_cell']),
+        rows.append([_P(str(sno), st['tbl_cell']),
                      _P('Interest income (FDs / savings)', st['tbl_cell']),
                      _P(_fmt(int_amt), st['tbl_cell_r'])])
-        sno += 1
-    if div_taxable > 0:
-        rows.append([_P(str(sno), st['tbl_cell']), _P('315', st['tbl_cell']),
-                     _P('Dividend income (taxable)', st['tbl_cell']),
-                     _P(_fmt(div_taxable), st['tbl_cell_r'])])
-    cw = [UW*0.06, UW*0.14, UW*0.50, UW*0.30]
+    cw = [UW*0.06, UW*0.64, UW*0.30]
     els.append(KeepTogether(_sched_table(hdr, rows, cw, st)))
     els.append(Spacer(1, 3))
 
     els.append(_cage_tbl([
         _cr(st, 'Total investment income (Rs.)',          315, total_inv, bold=True),
         _cr(st, 'Rent relief — 25% of gross rent (Rs.)',  316, rr),
-        _cr(st, 'Exempt dividend income (Rs.)',           317, div_exempt),
+    ]))
+    els.append(Spacer(1, 3))
+
+    # Part III — Dividend income
+    els.append(_P('Part III : Dividend income', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    hdr3 = [
+        _P('S/N',              st['tbl_hdr']),
+        _P('Type',             st['tbl_hdr_l']),
+        _P('Amount (Rs.)',     st['tbl_hdr']),
+    ]
+    rows3 = []
+    if div_taxable > 0:
+        rows3.append([_P('1', st['tbl_cell']),
+                      _P('Dividend income (taxable)', st['tbl_cell']),
+                      _P(_fmt(div_taxable), st['tbl_cell_r'])])
+    if div_exempt > 0:
+        rows3.append([_P(str(len(rows3) + 1), st['tbl_cell']),
+                      _P('Dividend income (exempt)', st['tbl_cell']),
+                      _P(_fmt(div_exempt), st['tbl_cell_r'])])
+    cw3 = [UW*0.06, UW*0.64, UW*0.30]
+    els.append(KeepTogether(_sched_table(hdr3, rows3, cw3, st)))
+    els.append(Spacer(1, 3))
+    els.append(_cage_tbl([
+        _cr(st, 'Exempt dividend income (Rs.)', 317, div_exempt),
     ]))
     els.append(Spacer(1, 5))
 
