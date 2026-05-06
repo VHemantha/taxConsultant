@@ -648,60 +648,93 @@ def _add_schedule_8(els, st, submission):
 
     taxable   = _D(submission.net_taxable_income)
     gross_tax = _D(submission.gross_tax)
-    slab_data = submission.slab_breakdown or []
 
-    els.append(_cage_tbl([
-        _cr(st, 'Taxable income (Cage 120) (Rs.)', 801, taxable, bold=True),
+    def _rate_tbl(rows):
+        """6-col table: label | cage.1 | amt.1 | rate | cage.3 | amt.3"""
+        cw = [UW*0.36, UW*0.08, UW*0.18, UW*0.07, UW*0.08, UW*0.23]
+        t = Table(rows, colWidths=cw)
+        t.setStyle(TableStyle([
+            ('GRID',          (1, 0), (2, -1), 0.5, MG),
+            ('GRID',          (4, 0), (5, -1), 0.5, MG),
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        return t
+
+    def _rr(label, c1, v1, rate, c3, v3):
+        return [
+            _P(label, st['cage_lbl']),
+            _P(str(c1) if c1 else '', st['cage_num']),
+            _P(_fmt(v1), st['cage_amt']),
+            _P(rate if rate else '', st['cage_num']),
+            _P(str(c3) if c3 else '', st['cage_num']),
+            _P(_fmt(v3), st['cage_amt']),
+        ]
+
+    # A.
+    els.append(_P('A.   Enter taxable income from cage 120 of the Return', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    els.append(_cage_tbl([_cr(st, 'Taxable income (Rs.)', 801, taxable, bold=True)]))
+    els.append(Spacer(1, 4))
+
+    # B. Terminal benefits
+    els.append(_P('B.   Total terminal benefits from cage 110 of schedule 1', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    els.append(_cage_tbl([_cr(st, 'Total terminal benefits (Rs.)', 802, Decimal('0'))]))
+    els.append(Spacer(1, 2))
+    els.append(_rate_tbl([
+        _rr('Terminal benefits under special rate', '803a.1', Decimal('0'), '0%',  '803a.3', Decimal('0')),
+        _rr('',                                     '803b.1', Decimal('0'), '6%',  '803b.3', Decimal('0')),
+        _rr('',                                     '803c.1', Decimal('0'), '12%', '803c.3', Decimal('0')),
+        _rr('Terminal benefits under normal rate',  '804.1',  Decimal('0'), '',    '804.3',  Decimal('0')),
     ]))
-    els.append(Spacer(1, 3))
-
-    # Slab breakdown table
-    hdr = [
-        _P('Slab',              st['tbl_hdr_l']),
-        _P('Rate',              st['tbl_hdr']),
-        _P('Taxable Amount (Rs.)', st['tbl_hdr']),
-        _P('Tax (Rs.)',         st['tbl_hdr']),
-    ]
-    slab_defaults = [
-        ('First Rs. 1,000,000',     '6%',  1_000_000),
-        ('Next Rs. 500,000',        '18%',   500_000),
-        ('Next Rs. 500,000',        '24%',   500_000),
-        ('Next Rs. 500,000',        '30%',   500_000),
-        ('Balance',                 '36%',         0),
-    ]
-    rows = []
-    if slab_data:
-        for slab in slab_data:
-            rate_pct = f"{float(slab.get('rate', 0)) * 100:.0f}%"
-            rows.append([
-                _P(slab.get('label', ''), st['tbl_cell']),
-                _P(rate_pct, st['tbl_cell']),
-                _P(_fmt(slab.get('taxable_in_slab', 0)), st['tbl_cell_r']),
-                _P(_fmt(slab.get('tax', 0)), st['tbl_cell_r']),
-            ])
-    else:
-        remaining = float(taxable)
-        for label, rate_str, limit in slab_defaults:
-            rate = float(rate_str.strip('%')) / 100
-            in_slab = min(remaining, limit) if limit else remaining
-            tax_in_slab = in_slab * rate
-            rows.append([
-                _P(label, st['tbl_cell']),
-                _P(rate_str, st['tbl_cell']),
-                _P(_fmt(in_slab), st['tbl_cell_r']),
-                _P(_fmt(tax_in_slab), st['tbl_cell_r']),
-            ])
-            remaining -= in_slab
-            if remaining <= 0:
-                break
-    cw = [UW*0.36, UW*0.12, UW*0.26, UW*0.26]
-    els.append(KeepTogether(_sched_table(hdr, rows, cw, st, total_idxs=[len(rows)])))
-    els.append(Spacer(1, 3))
+    els.append(Spacer(1, 2))
     els.append(_cage_tbl([
-        _cr(st, 'Tax on terminal benefits (Rs.)',          802, Decimal('0')),
-        _cr(st, 'Tax on investment asset gains (Rs.)',     806, Decimal('0')),
-        _cr(st, 'Tax on balance taxable income (Rs.)',     809, gross_tax),
-        _cr(st, 'Total tax (Rs.)',                         810, gross_tax, bold=True),
+        _cr(st, 'Total tax on terminal benefits (803a.3+803b.3+803c.3+804.3) (Rs.)', 805, Decimal('0')),
+    ]))
+    els.append(Spacer(1, 4))
+
+    # C.
+    els.append(_P('C.   Tax on gain on realization of investment assets from schedule 3', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    els.append(_rate_tbl([
+        _rr('', '806.1', Decimal('0'), '10%', '806.3', Decimal('0')),
+    ]))
+    els.append(Spacer(1, 4))
+
+    # D.
+    els.append(_P('D.   Tax on gain on realization of investment assets from partnership from schedule 3', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    els.append(_rate_tbl([
+        _rr('', '807.1', Decimal('0'), '10%', '807.3', Decimal('0')),
+    ]))
+    els.append(Spacer(1, 4))
+
+    # E.
+    els.append(_P('E.   Tax on taxable income', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    els.append(_rate_tbl([
+        _rr('Tax on taxable income from betting & gaming, manufacture & sale or import and sale of any liquor, tobacco product',
+            '808.1', Decimal('0'), '40%', '808.3', Decimal('0')),
+        _rr('Tax on Taxable Income to be taxed at progressive Income Tax Rates',
+            '809.A.1', taxable, '', '809.A.3', gross_tax),
+        _rr('Any other taxable income',
+            '809.B.1', Decimal('0'), '', '809.B.3', Decimal('0')),
+    ]))
+    els.append(Spacer(1, 2))
+    els.append(_cage_tbl([
+        _cr(st, 'Tax on total taxable income (808.3 + 809.A.3 + 809.B.3) (Rs.)', 810, gross_tax, bold=True),
+    ]))
+    els.append(Spacer(1, 4))
+
+    # F.
+    els.append(_P('F.   Tax on final withholding payments (WHT not deducted)(Cage 614 of Schedule 6)', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    els.append(_cage_tbl([
+        _cr(st, 'Tax on final withholding payments (WHT not deducted) (Rs.)', 811, Decimal('0')),
     ]))
     els.append(Spacer(1, 5))
 
@@ -718,7 +751,7 @@ def _add_schedule_9(els, st, submission, tc):
 
     els.append(_cage_tbl([
         _cr(st, 'APIT on employment income — T10 certificate (Rs.)',  '903A', apit),
-        _cr(st, 'AIT/WHT set off (from Schedule 7) (Rs.)',             908,  wht_ait),
+        _cr(st, 'Advance income tax credit — Enter amount in Cage 710 of Schedule 7A (Rs.)', 908, wht_ait),
         _cr(st, 'Partnership tax credit (Rs.)',                        909,  partner_tc),
         _cr(st, 'Total installment payments (from Schedule 9B) (Rs.)', 911,  sap_total),
         _cr(st, 'Total tax credits (Rs.)',                             912,  total_credits, bold=True),
@@ -764,9 +797,86 @@ def _add_schedule_9b(els, st, submission):
     els.append(Spacer(1, 3))
     els.append(_cage_tbl([
         _cr(st, 'Total self-assessment payments (Rs.)',  932, total_sap, bold=True),
-        _cr(st, 'Tax deducted at source (Rs.)',          933, Decimal('0')),
+        _cr(st, 'AIT/WHT paid by withholdee — Enter amount in Cage 614 of Schedule 6B and 721 of Schedule 7B (Rs.)', 933, Decimal('0')),
         _cr(st, 'Total tax paid (932+933) (Rs.)',        934, total_sap, bold=True),
     ]))
+    els.append(Spacer(1, 5))
+
+
+# ── Schedule 10 — Loss Adjustment ────────────────────────────────────────────
+def _add_schedule_10(els, st):
+    _sec(els, st, 'Schedule 10 - Loss adjustment')
+
+    H  = st['tbl_hdr']
+    HL = st['tbl_hdr_l']
+    S  = st['tbl_cell']
+
+    def _empty_loss_tbl(hdr, cw):
+        return KeepTogether(_sched_table(hdr, [], cw, st))
+
+    # Part IA — Business Losses (40% rate)
+    els.append(_P('Part IA - Business Losses (Applicable tax rate for profit - 40%)', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    hdr_ia = [
+        _P('S/N', H), _P('Y/A', H),
+        _P('Loss (Rs.) (B/F & current year)', H),
+        _P('Business Income (Rs.) 40% Rate', H),
+        _P('Business Income (Rs.) Progressive Rates', H),
+        _P('Investment Income (Rs.)', H),
+        _P('Capital Gain (Rs.)', H),
+        _P('Exempt Income (Rs.)', H),
+        _P('Total Deduction (Rs.)', H),
+        _P('C/F Loss (Rs.)', H),
+    ]
+    cw_ia = [UW*0.04, UW*0.08, UW*0.11, UW*0.10, UW*0.10, UW*0.10, UW*0.10, UW*0.10, UW*0.11, UW*0.16]
+    els.append(_empty_loss_tbl(hdr_ia, cw_ia))
+    els.append(Spacer(1, 4))
+
+    # Part IB — Business Losses (Progressive)
+    els.append(_P('Part IB - Business Losses (Applicable tax rate for profit - Progressive)', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    hdr_ib = [
+        _P('S/N', H), _P('Y/A', H),
+        _P('Loss (Rs.) (B/F & current year)', H),
+        _P('Business Income (Rs.) Progressive Rates', H),
+        _P('Investment Income (Rs.)', H),
+        _P('Capital Gain (Rs.)', H),
+        _P('Exempt Income (Rs.)', H),
+        _P('Total Deduction Progressive (Rs.)', H),
+        _P('C/F Loss (Rs.)', H),
+    ]
+    cw_ib = [UW*0.04, UW*0.08, UW*0.12, UW*0.13, UW*0.12, UW*0.12, UW*0.12, UW*0.13, UW*0.14]
+    els.append(_empty_loss_tbl(hdr_ib, cw_ib))
+    els.append(Spacer(1, 4))
+
+    # Part II — Investment Losses
+    els.append(_P('Part II - Investment Losses', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    hdr_ii = [
+        _P('S/N', H), _P('Y/A', H),
+        _P('Loss (Rs.) (B/F & current year)', H),
+        _P('Investment Income (Rs.)', H),
+        _P('Capital Gain (Rs.)', H),
+        _P('Exempt Income (Rs.)', H),
+        _P('Total Deduction (Rs.)', H),
+        _P('C/F Loss (Rs.)', H),
+    ]
+    cw_ii = [UW*0.05, UW*0.09, UW*0.15, UW*0.15, UW*0.14, UW*0.14, UW*0.14, UW*0.14]
+    els.append(_empty_loss_tbl(hdr_ii, cw_ii))
+    els.append(Spacer(1, 4))
+
+    # Part III — Exempt Losses
+    els.append(_P('Part III - Exempt Losses', st['sec_hdr']))
+    els.append(Spacer(1, 2))
+    hdr_iii = [
+        _P('S/N', H), _P('Y/A', H),
+        _P('Loss (Rs.) (B/F & current year)', H),
+        _P('Exempt Income (Rs.)', H),
+        _P('Total Deduction (Rs.)', H),
+        _P('C/F Loss (Rs.)', H),
+    ]
+    cw_iii = [UW*0.06, UW*0.10, UW*0.21, UW*0.21, UW*0.21, UW*0.21]
+    els.append(_empty_loss_tbl(hdr_iii, cw_iii))
     els.append(Spacer(1, 5))
 
 
@@ -1155,6 +1265,7 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     _add_schedule_8(els, st, submission)
     _add_schedule_9(els, st, submission, tc)
     _add_schedule_9b(els, st, submission)
+    _add_schedule_10(els, st)
 
     if include_assets_liabilities:
         els.append(PageBreak())
