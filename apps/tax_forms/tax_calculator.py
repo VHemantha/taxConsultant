@@ -72,12 +72,11 @@ def calculate_full_tax(submission) -> dict:
     Calculate full tax liability for a submission.
     Returns a dict with all calculated values and a detailed slab breakdown.
 
-    Change 5: All income sources are now correctly summed.
-    Change 16: Exempt dividends (15% WHT from resident companies) are excluded
-               from TAI and tracked separately.
-    Change 17: Rent relief is auto-calculated at 25% of gross rent.
-    Change 18: Foreign income included with foreign_tax_paid as tax credit.
-    Change 19: Returns slab_breakdown for detailed display.
+    All income sources (including foreign) are included in assessable income.
+    Exempt dividends are excluded from TAI and tracked separately.
+    Rent relief is auto-calculated at 25% of gross rent.
+    Foreign tax paid is treated as a direct tax credit (cage 901, Schedule 9).
+    Returns slab_breakdown for detailed display.
     """
     # ── 1. Income sources ────────────────────────────────────────────────────
 
@@ -125,13 +124,10 @@ def calculate_full_tax(submission) -> dict:
     if hasattr(submission, 'other_income'):
         other_inc = submission.other_income.amount or Decimal('0.00')
 
-    # Foreign income taxed at flat 15% — excluded from normal TAI/slabs
-    foreign_tax_gross = (foreign * FOREIGN_INCOME_TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    foreign_tax_net = max(Decimal('0.00'), foreign_tax_gross - foreign_tax_paid)
-
-    # Total Assessable Income EXCLUDES exempt dividends (Change 16) and foreign income
+    # Total Assessable Income — foreign income is included (taxed at normal progressive rates)
+    # Exempt dividends excluded per Change 16
     total_assessable = (
-        local_emp + terminal + rent_gross +
+        local_emp + foreign + terminal + rent_gross +
         interest + dividend_taxable + sole_prop + other_inc
     )
 
@@ -182,12 +178,15 @@ def calculate_full_tax(submission) -> dict:
 
     total_credits = apit + wht + partnership_credit + self_assessment_total
 
-    # ── 6. Net Tax Payable ───────────────────────────────────────────────────
+    # ── 6. Foreign income tax @ flat 15% (Schedule 9 cage 901) ──────────────
+    # Foreign income is included in assessable income (taxed at progressive rates above)
+    # AND separately taxed at a flat 15%. Foreign tax paid abroad offsets the flat 15% only.
+    foreign_tax_gross = (foreign * FOREIGN_INCOME_TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    foreign_tax_net = max(Decimal('0.00'), foreign_tax_gross - foreign_tax_paid)
 
-    normal_tax = gross_tax - total_credits
-    if normal_tax < 0:
-        normal_tax = Decimal('0.00')
-    # Foreign income taxed at flat 15%; add to normal tax for final payable
+    # ── 7. Net Tax Payable ───────────────────────────────────────────────────
+
+    normal_tax = max(Decimal('0.00'), gross_tax - total_credits)
     net_tax = normal_tax + foreign_tax_net
 
     return {
@@ -200,15 +199,15 @@ def calculate_full_tax(submission) -> dict:
         'gross_tax': gross_tax,
         'total_tax_credits': total_credits,
         'foreign_income': foreign,
-        'foreign_income_tax': foreign_tax_net,      # net foreign tax (after foreign_tax_paid credit)
+        'foreign_income_tax': foreign_tax_net,      # net flat-15% tax after foreign tax credit
         'net_tax_payable': net_tax,
         'slab_breakdown': slab_breakdown,
         'breakdown': {
             'local_employment': local_emp,
             'foreign_income': foreign,
             'foreign_tax_paid': foreign_tax_paid,
-            'foreign_tax_gross': foreign_tax_gross,
-            'foreign_tax_net': foreign_tax_net,
+            'foreign_tax_gross': foreign_tax_gross,   # foreign * 15%
+            'foreign_tax_net': foreign_tax_net,       # after deducting foreign_tax_paid
             'terminal_benefit': terminal,
             'rent_income': rent_gross,
             'interest_income': interest,
