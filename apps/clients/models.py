@@ -1,6 +1,8 @@
 from django.db import models
 from django.conf import settings
 
+from encrypted_fields import EncryptedCharField, EncryptedTextField
+
 
 class ClientAssessmentYear(models.Model):
     """Tracks which assessment years are assigned to each client for the cyclic process."""
@@ -54,13 +56,13 @@ class ClientProfile(models.Model):
         blank=True,
         related_name='assigned_clients'
     )
-    full_name = models.CharField(max_length=200)
-    tin = models.CharField(max_length=50, blank=True, null=True, verbose_name='TIN')
-    pin = models.CharField(max_length=50, blank=True, null=True, verbose_name='PIN')
-    nic_passport = models.CharField(max_length=50, blank=True, null=True, verbose_name='NIC/Passport')
-    telephone = models.CharField(max_length=20, blank=True, null=True)
-    mobile = models.CharField(max_length=20, blank=True, null=True)
-    address = models.TextField(blank=True, null=True)
+    full_name = EncryptedCharField(max_length=200)
+    tin = EncryptedCharField(max_length=50, blank=True, null=True, verbose_name='TIN')
+    pin = EncryptedCharField(max_length=50, blank=True, null=True, verbose_name='PIN')
+    nic_passport = EncryptedCharField(max_length=50, blank=True, null=True, verbose_name='NIC/Passport')
+    telephone = EncryptedCharField(max_length=20, blank=True, null=True)
+    mobile = EncryptedCharField(max_length=20, blank=True, null=True)
+    address = EncryptedTextField(blank=True, null=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='not_started')
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

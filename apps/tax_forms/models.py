@@ -4,6 +4,8 @@ from django.core.validators import MinValueValidator
 from decimal import Decimal
 import os
 
+from encrypted_fields import EncryptedCharField, EncryptedJSONField
+
 
 def _ird_upload_path(instance, filename):
     return f'ird_submissions/{instance.id}/{filename}'
@@ -123,7 +125,7 @@ class TaxSubmission(models.Model):
 class LocalEmploymentIncome(models.Model):
     submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='local_employment')
     amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    employer_name = models.CharField(max_length=200, blank=True, null=True)
+    employer_name = EncryptedCharField(max_length=200, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -196,7 +198,7 @@ class DividendIncome(models.Model):
 class SoleProprietorshipIncome(models.Model):
     submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='sole_proprietorship')
     amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    business_name = models.CharField(max_length=200, blank=True, null=True)
+    business_name = EncryptedCharField(max_length=200, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -262,7 +264,7 @@ class TaxCredits(models.Model):
 
 class ImmovableProperty(models.Model):
     submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='immovable_properties')
-    situation_of_property = models.CharField(max_length=500, blank=True)
+    situation_of_property = EncryptedCharField(max_length=500, blank=True)
     date_of_acquisition = models.DateField(null=True, blank=True)
     cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     market_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -276,7 +278,7 @@ class ImmovableProperty(models.Model):
 class MotorVehicle(models.Model):
     submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='motor_vehicles')
     description = models.CharField(max_length=200, blank=True)
-    registration_no = models.CharField(max_length=50, blank=True)
+    registration_no = EncryptedCharField(max_length=50, blank=True)
     date_of_acquisition = models.DateField(null=True, blank=True)
     cost_market_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     order = models.IntegerField(default=1)
@@ -288,8 +290,8 @@ class MotorVehicle(models.Model):
 
 class BankBalance(models.Model):
     submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='bank_balances')
-    bank_name = models.CharField(max_length=200, blank=True)
-    account_no = models.CharField(max_length=100, blank=True)
+    bank_name = EncryptedCharField(max_length=200, blank=True)
+    account_no = EncryptedCharField(max_length=100, blank=True)
     amount_invested = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     interest = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -324,7 +326,7 @@ class CashInHand(models.Model):
 
 class LoansGiven(models.Model):
     submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='loans_given')
-    borrower_name = models.CharField(max_length=200, blank=True)
+    borrower_name = EncryptedCharField(max_length=200, blank=True)
     amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     notes = models.TextField(blank=True, null=True)
 
@@ -343,7 +345,7 @@ class GoldSilverJewellery(models.Model):
 
 class BusinessProperty(models.Model):
     submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='business_properties')
-    name_of_business = models.CharField(max_length=200, blank=True)
+    name_of_business = EncryptedCharField(max_length=200, blank=True)
     current_account_balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     capital_account_balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     order = models.IntegerField(default=1)
@@ -406,13 +408,13 @@ class Liability(models.Model):
 
 class DeclarantDetails(models.Model):
     submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='declarant_details')
-    full_name = models.CharField(max_length=200)
-    telephone = models.CharField(max_length=20, blank=True, null=True)
-    mobile = models.CharField(max_length=20, blank=True, null=True)
-    email = models.EmailField()
-    nic_passport = models.CharField(max_length=50)
-    tin = models.CharField(max_length=50, blank=True, null=True)
-    pin = models.CharField(max_length=50, blank=True, null=True)
+    full_name = EncryptedCharField(max_length=200)
+    telephone = EncryptedCharField(max_length=20, blank=True, null=True)
+    mobile = EncryptedCharField(max_length=20, blank=True, null=True)
+    email = EncryptedCharField(max_length=254)
+    nic_passport = EncryptedCharField(max_length=50)
+    tin = EncryptedCharField(max_length=50, blank=True, null=True)
+    pin = EncryptedCharField(max_length=50, blank=True, null=True)
 
     class Meta:
         db_table = 'declarant_details'
@@ -514,8 +516,8 @@ class CashFlowStatement(models.Model):
 
     # Opening balances (1 April)
     opening_cash_in_hand = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    opening_favourable_banks = models.JSONField(default=list, blank=True)   # [{bank_name, account_no, amount}]
-    opening_overdraft_banks  = models.JSONField(default=list, blank=True)   # [{bank_name, account_no, amount}]
+    opening_favourable_banks = EncryptedJSONField(default=list, blank=True)   # [{bank_name, account_no, amount}]
+    opening_overdraft_banks  = EncryptedJSONField(default=list, blank=True)   # [{bank_name, account_no, amount}]
 
     # Receipts during the year
     receipt_employment_income       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -548,8 +550,8 @@ class CashFlowStatement(models.Model):
 
     # Closing balances (31 March)
     closing_cash_in_hand    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    closing_favourable_banks = models.JSONField(default=list, blank=True)
-    closing_overdraft_banks  = models.JSONField(default=list, blank=True)
+    closing_favourable_banks = EncryptedJSONField(default=list, blank=True)
+    closing_overdraft_banks  = EncryptedJSONField(default=list, blank=True)
 
     # Living expenses
     living_expenses_year    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))

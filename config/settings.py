@@ -8,6 +8,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-tax-automation-secret-key-change-in-production')
 
+# Field-level AES encryption key (Fernet / AES-128-CBC + HMAC-SHA256).
+# Generate once: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Store in .env as: FIELD_ENCRYPTION_KEY=<generated-key>
+# WARNING: losing this key means all encrypted personal data becomes unrecoverable.
+FIELD_ENCRYPTION_KEY = config('FIELD_ENCRYPTION_KEY', default='')
+
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])

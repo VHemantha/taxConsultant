@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from encrypted_fields import EncryptedCharField
+
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = [
@@ -14,7 +16,7 @@ class CustomUser(AbstractUser):
 
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='client')
-    phone = models.CharField(max_length=20, blank=True, null=True)
+    phone = EncryptedCharField(max_length=20, blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
