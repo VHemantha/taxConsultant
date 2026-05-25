@@ -15,9 +15,8 @@ def _recalculate_for_submission(submission_id):
         sub = TaxSubmission.objects.select_related(
             'local_employment', 'foreign_income', 'terminal_benefit',
             'rent_income', 'interest_income', 'dividend_income',
-            'sole_proprietorship', 'other_income',
-            'qualifying_payments', 'tax_credits',
-        ).get(pk=submission_id)
+            'other_income', 'qualifying_payments', 'tax_credits',
+        ).prefetch_related('sole_proprietorships', 'self_assessment_payments').get(pk=submission_id)
 
         result = calculate_full_tax(sub)
 

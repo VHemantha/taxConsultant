@@ -8,7 +8,7 @@ from .views import (
     # Income sections
     LocalEmploymentView, ForeignIncomeView, TerminalBenefitView,
     RentIncomeView, InterestIncomeView, DividendIncomeView,
-    SoleProprietorshipView, OtherIncomeView,
+    SoleProprietorshipListView, SoleProprietorshipItemView, OtherIncomeView,
     # Qualifying / Credits
     QualifyingPaymentsView, TaxCreditsView,
     SelfAssessmentListView, SelfAssessmentItemView,
@@ -71,7 +71,8 @@ urlpatterns = [
     path('submissions/<int:submission_id>/income/rent/', RentIncomeView.as_view()),
     path('submissions/<int:submission_id>/income/interest/', InterestIncomeView.as_view()),
     path('submissions/<int:submission_id>/income/dividend/', DividendIncomeView.as_view()),
-    path('submissions/<int:submission_id>/income/sole-proprietorship/', SoleProprietorshipView.as_view()),
+    path('submissions/<int:submission_id>/income/sole-proprietorship/', SoleProprietorshipListView.as_view()),
+    path('income/sole-proprietorship/<int:pk>/', SoleProprietorshipItemView.as_view()),
     path('submissions/<int:submission_id>/income/other/', OtherIncomeView.as_view()),
 
     # Qualifying payments & tax credits

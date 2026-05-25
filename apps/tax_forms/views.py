@@ -1,4 +1,4 @@
-from rest_framework import generics, status
+from rest_framework import generics, parsers, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -153,7 +153,7 @@ class TaxSubmissionListCreateView(APIView):
         else:
             submissions = TaxSubmission.objects.filter(client=request.user)
 
-        serializer = TaxSubmissionListSerializer(submissions, many=True)
+        serializer = TaxSubmissionListSerializer(submissions, many=True, context={'request': request})
         return Response(serializer.data)
 
     def post(self, request):
@@ -202,7 +202,7 @@ class TaxSubmissionListCreateView(APIView):
             profile.status = 'in_progress'
             profile.save(update_fields=['status'])
 
-        return Response(TaxSubmissionSerializer(submission).data, status=status.HTTP_201_CREATED)
+        return Response(TaxSubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 class TaxSubmissionDetailView(APIView):
@@ -224,7 +224,7 @@ class TaxSubmissionDetailView(APIView):
         submission = self.get_submission(pk, request.user)
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(TaxSubmissionSerializer(submission).data)
+        return Response(TaxSubmissionSerializer(submission, context={'request': request}).data)
 
     def patch(self, request, pk):
         submission = self.get_submission(pk, request.user)
@@ -242,7 +242,7 @@ class TaxSubmissionDetailView(APIView):
                     submission.reviewed_by = request.user
                     submission.reviewed_at = timezone.now()
             submission.save()
-        return Response(TaxSubmissionSerializer(submission).data)
+        return Response(TaxSubmissionSerializer(submission, context={'request': request}).data)
 
 
 class SubmitTaxFormView(APIView):
@@ -586,7 +586,13 @@ class DividendIncomeView(SectionUpdateView):
     section_name = 'Dividend Income'
 
 
-class SoleProprietorshipView(SectionUpdateView):
+class SoleProprietorshipListView(MultiRowSectionView):
+    model_class = SoleProprietorshipIncome
+    serializer_class = SoleProprietorshipIncomeSerializer
+    section_name = 'Sole Proprietorship'
+
+
+class SoleProprietorshipItemView(MultiRowItemView):
     model_class = SoleProprietorshipIncome
     serializer_class = SoleProprietorshipIncomeSerializer
     section_name = 'Sole Proprietorship'
@@ -892,7 +898,7 @@ class ConsultantUpdateCalculationView(APIView):
                 new_data={f: str(request.data[f]) for f in changed},
                 description=f'Updated tax computation fields: {", ".join(changed.keys())}',
             )
-        return Response(TaxSubmissionSerializer(submission).data)
+        return Response(TaxSubmissionSerializer(submission, context={'request': request}).data)
 
 
 # ── Archive tree view ──────────────────────────────────────────────────────────
@@ -994,8 +1000,10 @@ class LiveCalculateView(APIView):
 # ── Payment Status Update (Accounts Division) ─────────────────────────────────
 
 class PaymentStatusView(APIView):
-    """PATCH payment_status on a submission. Accounts Division only."""
+    """PATCH payment_status on a submission. Accounts Division only.
+    Accepts multipart/form-data so a payment slip file can be attached."""
     permission_classes = [IsAccountsDivision]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def patch(self, request, pk):
         try:
@@ -1009,10 +1017,20 @@ class PaymentStatusView(APIView):
                 {'error': "payment_status must be 'pending', 'paid', or 'overdue'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        update_fields = ['payment_status', 'payment_updated_by', 'payment_updated_at']
         submission.payment_status = new_status
         submission.payment_updated_by = request.user
         submission.payment_updated_at = timezone.now()
-        submission.save(update_fields=['payment_status', 'payment_updated_by', 'payment_updated_at'])
+
+        slip_file = request.FILES.get('payment_slip')
+        if slip_file:
+            if submission.payment_slip:
+                submission.payment_slip.delete(save=False)
+            submission.payment_slip = slip_file
+            update_fields.append('payment_slip')
+
+        submission.save(update_fields=update_fields)
 
         if new_status == 'paid':
             profile = getattr(submission.client, 'client_profile', None)
@@ -1026,9 +1044,14 @@ class PaymentStatusView(APIView):
                     related_submission_id=submission.id,
                 )
 
+        slip_url = None
+        if submission.payment_slip:
+            slip_url = request.build_absolute_uri(submission.payment_slip.url)
+
         return Response({
             'payment_status': submission.payment_status,
             'payment_updated_at': submission.payment_updated_at,
+            'payment_slip_url': slip_url,
         })
 
 
@@ -1043,7 +1066,7 @@ class AccountsQueueView(APIView):
             status__in=['awaiting_confirmation', 'confirmed'],
             payment_status='pending',
         ).select_related('client', 'tax_year', 'reviewed_by')
-        return Response(TaxSubmissionListSerializer(submissions, many=True).data)
+        return Response(TaxSubmissionListSerializer(submissions, many=True, context={'request': request}).data)
 
 
 # ── Final Submit (Consultant → after payment confirmed, sends to client for review) ──
@@ -1496,7 +1519,7 @@ class DashboardStatusDetailView(APIView):
             'count': paginator.count,
             'num_pages': paginator.num_pages,
             'page': page_num,
-            'results': TaxSubmissionListSerializer(page.object_list, many=True).data,
+            'results': TaxSubmissionListSerializer(page.object_list, many=True, context={'request': request}).data,
         })
 
 

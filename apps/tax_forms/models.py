@@ -96,6 +96,7 @@ class TaxSubmission(models.Model):
         null=True, blank=True, related_name='payment_updates',
     )
     payment_updated_at = models.DateTimeField(null=True, blank=True)
+    payment_slip = models.FileField(upload_to='payment_slips/%Y/%m/', null=True, blank=True)
 
     # IRD submission tracking
     ird_submission_file = models.FileField(
@@ -196,9 +197,10 @@ class DividendIncome(models.Model):
 
 
 class SoleProprietorshipIncome(models.Model):
-    submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='sole_proprietorship')
+    submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='sole_proprietorships')
     amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     business_name = EncryptedCharField(max_length=200, blank=True, null=True)
+    wht_deducted = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), null=True, blank=True)
     notes = models.TextField(blank=True, null=True)
 
     class Meta:

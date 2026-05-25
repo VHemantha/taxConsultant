@@ -121,8 +121,10 @@ def calculate_full_tax(submission) -> dict:
         dividend_exempt = di.exempt_amount or Decimal('0.00')
 
     sole_prop = Decimal('0.00')
-    if hasattr(submission, 'sole_proprietorship'):
-        sole_prop = submission.sole_proprietorship.amount or Decimal('0.00')
+    sole_prop_wht = Decimal('0.00')
+    for sp in submission.sole_proprietorships.all():
+        sole_prop += sp.amount or Decimal('0.00')
+        sole_prop_wht += sp.wht_deducted or Decimal('0.00')
 
     other_inc = Decimal('0.00')
     if hasattr(submission, 'other_income'):
@@ -180,8 +182,8 @@ def calculate_full_tax(submission) -> dict:
     for sap in submission.self_assessment_payments.all():
         self_assessment_total += sap.amount or Decimal('0.00')
 
-    # WHT deducted at source on rent and interest (client-reported, separate from WHT certificates)
-    wht = wht_certs + rent_wht + interest_wht
+    # WHT deducted at source on rent, interest, and sole proprietorship income
+    wht = wht_certs + rent_wht + interest_wht + sole_prop_wht
 
     total_credits = apit + wht + partnership_credit + self_assessment_total
 
@@ -207,6 +209,7 @@ def calculate_full_tax(submission) -> dict:
         'total_tax_credits': total_credits,
         'wht_rent': rent_wht,
         'wht_interest': interest_wht,
+        'wht_sole_prop': sole_prop_wht,
         'foreign_income': foreign,
         'foreign_income_tax': foreign_tax_net,      # net flat-15% tax after foreign tax credit
         'net_tax_payable': net_tax,
@@ -223,6 +226,7 @@ def calculate_full_tax(submission) -> dict:
             'dividend_income': dividend_taxable,
             'dividend_exempt': dividend_exempt,
             'sole_proprietorship': sole_prop,
+            'wht_sole_prop': sole_prop_wht,
             'other_income': other_inc,
             'donation_charitable': donation_charitable,
             'donation_government': donation_govt,

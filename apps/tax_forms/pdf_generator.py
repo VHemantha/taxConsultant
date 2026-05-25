@@ -340,10 +340,10 @@ def _add_schedule_1(els, st, lei, fi, tb):
 
 
 # ── Schedule 2 — Business Income ─────────────────────────────────────────────
-def _add_schedule_2(els, st, spi, fi):
+def _add_schedule_2(els, st, sole_props, fi):
     _sec(els, st, 'Schedule 2 - Business income')
 
-    sp_amt  = _D(spi and spi.amount)
+    sp_amt  = sum(_D(sp.amount) for sp in sole_props) if sole_props else Decimal('0')
     fb_amt  = _D(fi  and fi.foreign_business_income)
     total   = sp_amt + fb_amt
 
@@ -357,13 +357,14 @@ def _add_schedule_2(els, st, spi, fi):
         _P('Net Profit / (Loss) (Rs.)', st['tbl_hdr']),
     ]
     rows = []
-    if sp_amt != 0:
-        rows.append([
-            _P('1', st['tbl_cell']),
-            _P((spi and spi.business_name) or '—', st['tbl_cell']),
-            _P('', st['tbl_cell']),
-            _P(_fmt(sp_amt), st['tbl_cell_r']),
-        ])
+    for idx, sp in enumerate(sole_props, 1):
+        if _D(sp.amount) != 0:
+            rows.append([
+                _P(str(idx), st['tbl_cell']),
+                _P(sp.business_name or '—', st['tbl_cell']),
+                _P('', st['tbl_cell']),
+                _P(_fmt(_D(sp.amount)), st['tbl_cell_r']),
+            ])
     cw = [UW*0.06, UW*0.40, UW*0.22, UW*0.32]
     els.append(KeepTogether(_sched_table(hdr, rows, cw, st)))
     els.append(Spacer(1, 2))
@@ -880,6 +881,287 @@ def _add_schedule_10(els, st):
     els.append(Spacer(1, 5))
 
 
+# ── Tax Computation Summary ───────────────────────────────────────────────────
+def _add_tax_computation_summary(els, st, submission):
+    """Client-facing tax computation summary — shown first in the PDF."""
+    lei  = getattr(submission, 'local_employment',    None)
+    fi   = getattr(submission, 'foreign_income',      None)
+    tb   = getattr(submission, 'terminal_benefit',    None)
+    ri   = getattr(submission, 'rent_income',         None)
+    ii   = getattr(submission, 'interest_income',     None)
+    di   = getattr(submission, 'dividend_income',     None)
+    sole_props = list(submission.sole_proprietorships.all())
+    sole_prop_total = sum(sp.amount or Decimal('0') for sp in sole_props)
+    oi   = getattr(submission, 'other_income',        None)
+    qp   = getattr(submission, 'qualifying_payments', None)
+    tc   = getattr(submission, 'tax_credits',         None)
+    dd   = getattr(submission, 'declarant_details',   None)
+
+    S   = st['tbl_cell']
+    SR  = st['tbl_cell_r']
+    SB  = st['tbl_cell_b']
+    SBR = st['tbl_cell_rb']
+    H   = st['tbl_hdr']
+    HL  = st['tbl_hdr_l']
+
+    # ── Title ──────────────────────────────────────────────────────────────────
+    year = submission.tax_year.label if submission.tax_year else ''
+    els.append(_P(f'Tax Computation Summary — Y/A {year}', st['form_title']))
+    els.append(HRFlowable(width='100%', thickness=1, color=BK, spaceAfter=4, spaceBefore=2))
+
+    # Client info row
+    name = (dd.full_name if dd else '') or ''
+    tin  = (dd.tin       if dd else '') or ''
+    IL, IV = st['info_lbl'], st['info_val']
+    info = [
+        [_P('Name', IL), _P(name or '—', IV), _P('TIN', IL), _P(tin or '—', IV)],
+        [_P('Year of Assessment', IL), _P(year, IV), _P('', IL), _P('', IV)],
+    ]
+    t = Table(info, colWidths=[UW*0.18, UW*0.32, UW*0.18, UW*0.32])
+    t.setStyle(TableStyle([
+        ('GRID',          (0, 0), (-1, -1), 0.4, MG),
+        ('TOPPADDING',    (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 5),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8),
+    ]))
+    els.append(t)
+    els.append(Spacer(1, 6))
+
+    # ── Income Sources ─────────────────────────────────────────────────────────
+    _sec(els, st, 'A.  Income Sources')
+    inc_rows = []
+    sno = 1
+    def _inc(label, val):
+        nonlocal sno
+        if _D(val) > 0:
+            inc_rows.append([_P(str(sno), S), _P(label, S), _P(_fmt(val), SR)])
+            sno += 1
+
+    _inc('Local Employment Income',                  lei and lei.amount)
+    _inc('Foreign Employment / Service Fee',         fi  and fi.employment_service_fee)
+    _inc('Foreign Business Income',                  fi  and fi.foreign_business_income)
+    _inc('Foreign Other Income',                     fi  and fi.other_foreign_income)
+    _inc('Terminal Benefit',                         tb  and tb.amount)
+    _inc('Gross Rent Income',                        ri  and ri.gross_amount)
+    _inc('Interest Income',                          ii  and ii.amount)
+    _inc('Dividend Income (taxable)',                di  and di.amount)
+    if sole_props:
+        for sp in sole_props:
+            _inc(f'Business Income ({sp.business_name or "Sole Proprietorship"})', sp.amount)
+    else:
+        _inc('Sole Proprietorship / Business Income', None)
+    _inc('Other Income',                             oi  and oi.amount)
+
+    tai = _D(submission.total_assessable_income)
+    inc_rows.append([
+        _P('', SB), _P('Total Assessable Income', SB), _P(_fmt(tai), SBR),
+    ])
+
+    # Exempt dividend (informational, shown green-ish via italic)
+    exempt_div = _D(submission.exempt_dividend_income)
+    if exempt_div > 0:
+        inc_rows.append([
+            _P('', S),
+            _P('  Exempt Dividend Income (15% WHT — not in TAI)', st['small_gray']),
+            _P(_fmt(exempt_div), st['small_gray']),
+        ])
+
+    # Total row is the last non-exempt row; find its index
+    total_row_idx = len(inc_rows) - (2 if exempt_div > 0 else 1)
+    inc_tbl = Table(inc_rows, colWidths=[UW*0.06, UW*0.66, UW*0.28])
+    inc_tbl.setStyle(TableStyle([
+        ('GRID',          (0, 0), (-1, -1), 0.4, MG),
+        ('LINEABOVE',     (0, total_row_idx), (-1, total_row_idx), 0.8, BK),
+        ('TOPPADDING',    (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8),
+    ]))
+    els.append(KeepTogether(inc_tbl))
+    els.append(Spacer(1, 4))
+
+    # ── Deductions ─────────────────────────────────────────────────────────────
+    _sec(els, st, 'B.  Qualifying Payments and Reliefs')
+
+    rent_relief   = _D(submission.rent_relief)
+    personal_rlf  = _D(submission.personal_relief)
+    total_qp      = _D(submission.total_qualifying_payments)
+    solar         = _D(qp and qp.solar_panels_expenditure) if qp else Decimal('0')
+    don_char      = _D(qp and qp.donation_charitable)      if qp else Decimal('0')
+    don_govt      = _D(qp and qp.donation_government)      if qp else Decimal('0')
+    solar_allowed = min(solar, Decimal('600000'))
+
+    ded_rows = []
+    def _ded(label, val, bold=False):
+        ded_rows.append([
+            _P(label, SB if bold else S),
+            _P(_fmt(val), SBR if bold else SR),
+        ])
+
+    if don_char > 0:   _ded(f'  Charitable Donations', don_char)
+    if don_govt > 0:   _ded(f'  Government Donations', don_govt)
+    if solar_allowed > 0: _ded(f'  Solar Panel Expenditure (max Rs. 600,000)', solar_allowed)
+    if total_qp > 0:   _ded('Total Qualifying Payments', total_qp, bold=True)
+    _ded('Personal Relief', personal_rlf)
+    if rent_relief > 0: _ded('Rent Relief (25% of Gross Rent)', rent_relief)
+
+    total_ded = total_qp + personal_rlf + rent_relief
+    _ded('Total Deductions', total_ded, bold=True)
+
+    ded_tbl = Table(ded_rows, colWidths=[UW*0.72, UW*0.28])
+    ded_tbl.setStyle(TableStyle([
+        ('GRID',          (0, 0), (-1, -1), 0.4, MG),
+        ('TOPPADDING',    (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8),
+    ]))
+    els.append(ded_tbl)
+    els.append(Spacer(1, 4))
+
+    # ── Foreign Income Tax @ 15% ───────────────────────────────────────────────
+    foreign_total = (
+        _D(fi and fi.employment_service_fee) +
+        _D(fi and fi.foreign_business_income) +
+        _D(fi and fi.other_foreign_income)
+    )
+    foreign_tax_paid = _D(fi and fi.foreign_tax_paid)
+    if foreign_total > 0:
+        _sec(els, st, 'C.  Foreign Income Tax (Flat Rate 15%)')
+        ftax_gross = (foreign_total * Decimal('0.15')).quantize(Decimal('0.01'))
+        ftax_net   = max(Decimal('0'), ftax_gross - foreign_tax_paid)
+        ft_rows = [
+            [_P('Foreign Income', S),                     _P(_fmt(foreign_total), SR)],
+            [_P('Tax @ 15%', S),                          _P(_fmt(ftax_gross), SR)],
+        ]
+        if foreign_tax_paid > 0:
+            ft_rows.append([_P('Less: Foreign Tax Paid (Cage 901)', S), _P(f'({_fmt(foreign_tax_paid)})', SR)])
+        ft_rows.append([_P('Net Foreign Income Tax', SB),               _P(_fmt(ftax_net), SBR)])
+        ft_tbl = Table(ft_rows, colWidths=[UW*0.72, UW*0.28])
+        ft_tbl.setStyle(TableStyle([
+            ('GRID',          (0, 0), (-1, -1), 0.4, MG),
+            ('LINEABOVE',     (0, -1), (-1, -1), 0.8, BK),
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTSIZE',      (0, 0), (-1, -1), 8),
+        ]))
+        els.append(ft_tbl)
+        els.append(Spacer(1, 4))
+        sec_label = 'D.'
+    else:
+        ftax_net  = Decimal('0')
+        sec_label = 'C.'
+
+    # ── Progressive Tax Computation ────────────────────────────────────────────
+    _sec(els, st, f'{sec_label}  Tax Computation on Taxable Income')
+    net_taxable = _D(submission.net_taxable_income)
+    gross_tax   = _D(submission.gross_tax)
+
+    els.append(_cage_tbl([_cr(st, 'Net Taxable Income (Rs.)', 120, net_taxable, bold=True)]))
+    els.append(Spacer(1, 3))
+
+    # Slab breakdown
+    slabs = submission.slab_breakdown or []
+    if slabs:
+        slab_hdr = [_P('Tax Band', HL), _P('Taxable Amount (Rs.)', H), _P('Tax (Rs.)', H)]
+        slab_rows = [
+            [_P(row.get('label', ''), S),
+             _P(_fmt(row.get('taxable_amount', 0)), SR),
+             _P(_fmt(row.get('tax', 0)), SR)]
+            for row in slabs
+        ]
+        total_slab = sum(_D(r.get('tax', 0)) for r in slabs)
+        slab_rows.append([_P('Gross Tax', SB), _P('', SBR), _P(_fmt(total_slab), SBR)])
+        slab_tbl = Table([slab_hdr] + slab_rows, colWidths=[UW*0.52, UW*0.24, UW*0.24])
+        slab_tbl.setStyle(TableStyle([
+            ('GRID',          (0, 0), (-1, -1), 0.4, MG),
+            ('BACKGROUND',    (0, 0), (-1, 0),  LG),
+            ('LINEABOVE',     (0, -1), (-1, -1), 0.8, BK),
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTSIZE',      (0, 0), (-1, -1), 8),
+        ]))
+        els.append(KeepTogether(slab_tbl))
+    else:
+        els.append(_cage_tbl([_cr(st, 'Gross Tax (Rs.)', 150, gross_tax, bold=True)]))
+    els.append(Spacer(1, 4))
+
+    # ── Tax Credits ────────────────────────────────────────────────────────────
+    next_sec = chr(ord(sec_label[0]) + 1) + '.'
+    _sec(els, st, f'{next_sec}  Tax Credits')
+
+    apit         = _D(tc and tc.apit_on_salary)
+    wht_certs_t  = _D(tc and tc.wht_rent_interest_service)
+    partner_tc   = _D(tc and tc.partnership_tax_credit)
+    rent_wht     = _D(ri and ri.wht_deducted)
+    interest_wht = _D(ii and ii.wht_deducted)
+    sap_total    = sum(_D(s.amount) for s in submission.self_assessment_payments.all())
+    total_credits = _D(submission.total_tax_credits)
+
+    cr_rows = []
+    def _cred(label, val):
+        if _D(val) > 0:
+            cr_rows.append([_P(label, S), _P(f'({_fmt(val)})', SR)])
+
+    _cred('APIT on Salary',                       apit)
+    _cred('WHT on Rent Income (deducted at source)', rent_wht)
+    _cred('WHT on Interest Income (deducted at source)', interest_wht)
+    _cred('WHT / AIT Credits (certificates)',      wht_certs_t)
+    _cred('Partnership Tax Credit',                partner_tc)
+    _cred('Self-Assessment Installments',          sap_total)
+    cr_rows.append([_P('Total Tax Credits', SB), _P(f'({_fmt(total_credits)})', SBR)])
+
+    cr_tbl = Table(cr_rows, colWidths=[UW*0.72, UW*0.28])
+    cr_tbl.setStyle(TableStyle([
+        ('GRID',          (0, 0), (-1, -1), 0.4, MG),
+        ('LINEABOVE',     (0, -1), (-1, -1), 0.8, BK),
+        ('TOPPADDING',    (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8),
+    ]))
+    els.append(cr_tbl)
+    els.append(Spacer(1, 4))
+
+    # ── Net Tax Payable ────────────────────────────────────────────────────────
+    net_tax = _D(submission.net_tax_payable)
+    npay_rows = [
+        [_P('Gross Tax on Taxable Income', S),  _P(_fmt(gross_tax),   SR)],
+        [_P('Net Foreign Income Tax (15%)', S), _P(_fmt(ftax_net),    SR)],
+        [_P('Less: Total Tax Credits', S),       _P(f'({_fmt(total_credits)})', SR)],
+        [_P('NET TAX PAYABLE (Rs.)', SB),        _P(_fmt(net_tax),     SBR)],
+    ]
+    npay_tbl = Table(npay_rows, colWidths=[UW*0.72, UW*0.28])
+    npay_tbl.setStyle(TableStyle([
+        ('GRID',          (0, 0), (-1, -1), 0.5, MG),
+        ('BACKGROUND',    (0, -1), (-1, -1), LG),
+        ('LINEABOVE',     (0, -1), (-1, -1), 1.0, BK),
+        ('TOPPADDING',    (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8.5),
+    ]))
+    els.append(KeepTogether(npay_tbl))
+    els.append(Spacer(1, 5))
+
+
 # ── Statement of Assets & Liabilities ────────────────────────────────────────
 def _add_assets_liabilities(els, st, submission):
     _sec(els, st, 'Statement of assets and liabilities as at 31st March')
@@ -1188,7 +1470,14 @@ def _add_declarant_details(els, st, dd):
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
-def generate_tax_submission_pdf(submission, include_assets_liabilities=False) -> BytesIO:
+def generate_tax_submission_pdf(submission, include_assets_liabilities=True) -> BytesIO:
+    """
+    PDF structure:
+      1. Tax Computation Summary
+      2. Statement of Assets & Liabilities
+      3. Receipts & Payments (Cash Flow)
+      4. IIT Return (Header + Parts A-D + Schedules 1-10 + Declaration)
+    """
     buffer = BytesIO()
     sys_settings = _get_system_settings()
 
@@ -1202,23 +1491,39 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     st  = _build_styles()
     els = []
 
-    # Related objects
+    # Related objects (shared across sections)
     lei       = getattr(submission, 'local_employment',    None)
     fi        = getattr(submission, 'foreign_income',      None)
     tb        = getattr(submission, 'terminal_benefit',    None)
     ri        = getattr(submission, 'rent_income',         None)
     ii        = getattr(submission, 'interest_income',     None)
     di        = getattr(submission, 'dividend_income',     None)
-    spi       = getattr(submission, 'sole_proprietorship', None)
+    sole_props_pdf = list(submission.sole_proprietorships.all())
+    sole_prop_total_pdf = sum(sp.amount or Decimal('0') for sp in sole_props_pdf)
     oi        = getattr(submission, 'other_income',        None)
     qp        = getattr(submission, 'qualifying_payments', None)
     tc        = getattr(submission, 'tax_credits',         None)
     dd        = getattr(submission, 'declarant_details',   None)
     wht_certs = submission.wht_certificates.all()
 
-    # Cage values
+    # ── Section 1: Tax Computation Summary ────────────────────────────────────
+    _add_tax_computation_summary(els, st, submission)
+
+    # ── Section 2: Assets & Liabilities ───────────────────────────────────────
+    els.append(PageBreak())
+    _add_assets_liabilities(els, st, submission)
+
+    # ── Section 3: Receipts & Payments (Cash Flow) ────────────────────────────
+    if getattr(submission, 'cash_flow', None):
+        els.append(PageBreak())
+        _add_cash_flow(els, st, submission)
+
+    # ── Section 4: IIT Return ─────────────────────────────────────────────────
+    els.append(PageBreak())
+
+    # Cage values for official return
     cage_10  = _D(lei and lei.amount) + _D(fi and fi.employment_service_fee)
-    cage_20  = _D(spi and spi.amount) + _D(fi and fi.foreign_business_income)
+    cage_20  = sole_prop_total_pdf + _D(fi and fi.foreign_business_income)
     cage_30  = _D(ri and ri.gross_amount) + _D(ii and ii.amount) + _D(di and di.amount)
     cage_40  = _D(oi and oi.amount) + _D(fi and fi.other_foreign_income)
     cage_50  = _D(submission.total_assessable_income)
@@ -1251,12 +1556,11 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
         210: cage_210, '210A': Decimal('0'),
     }
 
-    # Build elements
     _add_header(els, st, submission, dd, sys_settings)
     _add_main_return(els, st, cages)
 
     _add_schedule_1(els, st, lei, fi, tb)
-    _add_schedule_2(els, st, spi, fi)
+    _add_schedule_2(els, st, sole_props_pdf, fi)
     _add_schedule_3(els, st, ri, ii, di, cage_60)
     _add_schedule_4(els, st, oi, fi)
     _add_schedule_5(els, st, qp, cage_100)
@@ -1266,11 +1570,6 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=False) ->
     _add_schedule_9(els, st, submission, tc)
     _add_schedule_9b(els, st, submission)
     _add_schedule_10(els, st)
-
-    if include_assets_liabilities:
-        els.append(PageBreak())
-        _add_assets_liabilities(els, st, submission)
-        _add_cash_flow(els, st, submission)
 
     _add_declarant_details(els, st, dd)
 

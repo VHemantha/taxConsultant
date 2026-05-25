@@ -252,7 +252,7 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     rent_income = RentIncomeSerializer(read_only=True)
     interest_income = InterestIncomeSerializer(read_only=True)
     dividend_income = DividendIncomeSerializer(read_only=True)
-    sole_proprietorship = SoleProprietorshipIncomeSerializer(read_only=True)
+    sole_proprietorships = SoleProprietorshipIncomeSerializer(many=True, read_only=True)
     other_income = OtherIncomeSerializer(read_only=True)
     qualifying_payments = QualifyingPaymentsSerializer(read_only=True)
     self_assessment_payments = SelfAssessmentPaymentSerializer(many=True, read_only=True)
@@ -275,6 +275,10 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     client_name = serializers.SerializerMethodField()
     client_email = serializers.EmailField(source='client.email', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
+    payment_slip_url = serializers.SerializerMethodField()
+    consultant_name = serializers.SerializerMethodField()
+    consultant_email = serializers.SerializerMethodField()
+    consultant_phone = serializers.SerializerMethodField()
 
     class Meta:
         model = TaxSubmission
@@ -286,12 +290,32 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
             return profile.full_name
         return obj.client.get_full_name() or obj.client.email
 
+    def get_consultant_name(self, obj):
+        if not obj.reviewed_by:
+            return None
+        return obj.reviewed_by.get_full_name() or obj.reviewed_by.email
+
+    def get_consultant_email(self, obj):
+        return obj.reviewed_by.email if obj.reviewed_by else None
+
+    def get_consultant_phone(self, obj):
+        return obj.reviewed_by.phone if obj.reviewed_by else None
+
+    def get_payment_slip_url(self, obj):
+        if not obj.payment_slip:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.payment_slip.url)
+        return obj.payment_slip.url
+
 
 class TaxSubmissionListSerializer(serializers.ModelSerializer):
     tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
     client_name = serializers.SerializerMethodField()
     client_email = serializers.EmailField(source='client.email', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
+    payment_slip_url = serializers.SerializerMethodField()
 
     class Meta:
         model = TaxSubmission
@@ -300,7 +324,7 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
             'tax_year', 'tax_year_label', 'status',
             'total_assessable_income', 'net_taxable_income',
             'total_tax_credits', 'net_tax_payable',
-            'payment_status', 'payment_status_display',
+            'payment_status', 'payment_status_display', 'payment_slip_url',
             'info_request_message',
             'created_at', 'submitted_at', 'confirmed_at',
         ]
@@ -310,6 +334,14 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
         if profile:
             return profile.full_name
         return obj.client.get_full_name() or obj.client.email
+
+    def get_payment_slip_url(self, obj):
+        if not obj.payment_slip:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.payment_slip.url)
+        return obj.payment_slip.url
 
 
 class SubmissionEditLogSerializer(serializers.ModelSerializer):
