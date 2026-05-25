@@ -101,12 +101,16 @@ def calculate_full_tax(submission) -> dict:
         terminal = submission.terminal_benefit.amount or Decimal('0.00')
 
     rent_gross = Decimal('0.00')
+    rent_wht = Decimal('0.00')
     if hasattr(submission, 'rent_income'):
         rent_gross = submission.rent_income.gross_amount or Decimal('0.00')
+        rent_wht   = submission.rent_income.wht_deducted or Decimal('0.00')
 
     interest = Decimal('0.00')
+    interest_wht = Decimal('0.00')
     if hasattr(submission, 'interest_income'):
-        interest = submission.interest_income.amount or Decimal('0.00')
+        interest     = submission.interest_income.amount or Decimal('0.00')
+        interest_wht = submission.interest_income.wht_deducted or Decimal('0.00')
 
     # Dividend income — separate taxable vs exempt (Change 16)
     dividend_taxable = Decimal('0.00')
@@ -163,18 +167,21 @@ def calculate_full_tax(submission) -> dict:
     # ── 5. Tax Credits ───────────────────────────────────────────────────────
 
     apit = Decimal('0.00')
-    wht = Decimal('0.00')
+    wht_certs = Decimal('0.00')
     partnership_credit = Decimal('0.00')
     self_assessment_total = Decimal('0.00')
 
     if hasattr(submission, 'tax_credits'):
         tc = submission.tax_credits
-        apit = tc.apit_on_salary or Decimal('0.00')
-        wht = tc.wht_rent_interest_service or Decimal('0.00')
+        apit          = tc.apit_on_salary or Decimal('0.00')
+        wht_certs     = tc.wht_rent_interest_service or Decimal('0.00')
         partnership_credit = tc.partnership_tax_credit or Decimal('0.00')
 
     for sap in submission.self_assessment_payments.all():
         self_assessment_total += sap.amount or Decimal('0.00')
+
+    # WHT deducted at source on rent and interest (client-reported, separate from WHT certificates)
+    wht = wht_certs + rent_wht + interest_wht
 
     total_credits = apit + wht + partnership_credit + self_assessment_total
 
@@ -198,6 +205,8 @@ def calculate_full_tax(submission) -> dict:
         'net_taxable_income': net_taxable,
         'gross_tax': gross_tax,
         'total_tax_credits': total_credits,
+        'wht_rent': rent_wht,
+        'wht_interest': interest_wht,
         'foreign_income': foreign,
         'foreign_income_tax': foreign_tax_net,      # net flat-15% tax after foreign tax credit
         'net_tax_payable': net_tax,
