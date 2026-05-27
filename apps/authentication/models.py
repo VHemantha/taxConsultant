@@ -14,7 +14,7 @@ class CustomUser(AbstractUser):
         ('super_admin', 'Super Admin'),
     ]
 
-    email = models.EmailField(unique=True)
+    email = models.EmailField()
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='client')
     phone = EncryptedCharField(max_length=20, blank=True, null=True)
     is_active = models.BooleanField(default=True)

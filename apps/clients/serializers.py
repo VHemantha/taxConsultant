@@ -46,8 +46,8 @@ class RegisterClientSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
+        # Multiple clients can share the same email (e.g. husband and wife).
+        # They distinguish themselves at login by using their unique username.
         return value
 
     def validate_username(self, value):

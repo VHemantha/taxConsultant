@@ -535,6 +535,7 @@ class CashFlowStatement(models.Model):
     receipt_sale_land_building      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_sale_motor_vehicle      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_sale_other_assets       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_other_items             = EncryptedJSONField(default=list, blank=True)  # [{description, amount}]
 
     # Payments during the year
     payment_purchase_land_building  = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -549,6 +550,7 @@ class CashFlowStatement(models.Model):
     payment_apit                    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     payment_investment_shares       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     payment_loans_given_others      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    payment_other_items             = EncryptedJSONField(default=list, blank=True)  # [{description, amount}]
 
     # Closing balances (31 March)
     closing_cash_in_hand    = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))

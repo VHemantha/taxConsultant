@@ -1326,7 +1326,7 @@ def _add_cash_flow(els, st, submission):
         _D(cf.receipt_bank_loan),          _D(cf.receipt_other_loans),
         _D(cf.receipt_sale_land_building), _D(cf.receipt_sale_motor_vehicle),
         _D(cf.receipt_sale_other_assets),
-    ])
+    ] + [_D(r.get('amount', 0)) for r in (cf.receipt_other_items or [])])
     payments = sum([
         _D(cf.payment_purchase_land_building), _D(cf.payment_purchase_motor_vehicle),
         _D(cf.payment_purchase_other_assets),  _D(cf.payment_repayment_bank_loan),
@@ -1334,7 +1334,7 @@ def _add_cash_flow(els, st, submission):
         _D(cf.payment_other_loans),            _D(cf.payment_wht),
         _D(cf.payment_income_tax),             _D(cf.payment_apit),
         _D(cf.payment_investment_shares),      _D(cf.payment_loans_given_others),
-    ])
+    ] + [_D(r.get('amount', 0)) for r in (cf.payment_other_items or [])])
     closing_fav = _bt(cf.closing_favourable_banks)
     closing_od  = _bt(cf.closing_overdraft_banks)
     closing_ttl = _D(cf.closing_cash_in_hand) + closing_fav - closing_od
@@ -1370,6 +1370,10 @@ def _add_cash_flow(els, st, submission):
         _row('Sale of land or building',                      cf.receipt_sale_land_building),
         _row('Sale of motor vehicle',                         cf.receipt_sale_motor_vehicle),
         _row('Sale of other assets',                          cf.receipt_sale_other_assets),
+    ] + [
+        _row(r.get('description') or 'Other receipt', r.get('amount', 0))
+        for r in (cf.receipt_other_items or [])
+    ] + [
         _row('Total receipts',                                receipts, bold=True),
         _row('Purchase of land or building',                  cf.payment_purchase_land_building),
         _row('Purchase of motor vehicle',                     cf.payment_purchase_motor_vehicle),
@@ -1383,6 +1387,10 @@ def _add_cash_flow(els, st, submission):
         _row('APIT paid',                                     cf.payment_apit),
         _row('Investment in shares',                          cf.payment_investment_shares),
         _row('Loans given to others',                         cf.payment_loans_given_others),
+    ] + [
+        _row(r.get('description') or 'Other payment', r.get('amount', 0))
+        for r in (cf.payment_other_items or [])
+    ] + [
         _row('Total payments',                                payments, bold=True),
         _row('Cash in hand — closing (31st March)',           cf.closing_cash_in_hand),
         _row('Cash at bank — favourable balances (closing)',  closing_fav),
@@ -1392,7 +1400,9 @@ def _add_cash_flow(els, st, submission):
         _row('Living expenses per month (÷ 12) (Rs.)',        living_mo),
     ]
 
-    total_row_idxs = [3, 18, 31, 35]  # 0-indexed in cf_rows (offset +1 for header in _sched_table approach)
+    _n_ro = len(cf.receipt_other_items or [])
+    _n_po = len(cf.payment_other_items  or [])
+    total_row_idxs = [3, 18 + _n_ro, 31 + _n_ro + _n_po, 35 + _n_ro + _n_po]
     sty = [
         ('GRID',          (0, 0), (-1, -1), 0.4, MG),
         ('BACKGROUND',    (0, 0), (-1, 0),  LG),
