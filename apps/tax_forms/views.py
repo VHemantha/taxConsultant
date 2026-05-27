@@ -586,18 +586,6 @@ class DividendIncomeView(SectionUpdateView):
     section_name = 'Dividend Income'
 
 
-class SoleProprietorshipListView(MultiRowSectionView):
-    model_class = SoleProprietorshipIncome
-    serializer_class = SoleProprietorshipIncomeSerializer
-    section_name = 'Sole Proprietorship'
-
-
-class SoleProprietorshipItemView(MultiRowItemView):
-    model_class = SoleProprietorshipIncome
-    serializer_class = SoleProprietorshipIncomeSerializer
-    section_name = 'Sole Proprietorship'
-
-
 class OtherIncomeView(SectionUpdateView):
     model_class = OtherIncome
     serializer_class = OtherIncomeSerializer
@@ -737,6 +725,19 @@ class MultiRowItemView(APIView):
             )
         obj.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Sole Proprietorship
+class SoleProprietorshipListView(MultiRowSectionView):
+    model_class = SoleProprietorshipIncome
+    serializer_class = SoleProprietorshipIncomeSerializer
+    section_name = 'Sole Proprietorship'
+
+
+class SoleProprietorshipItemView(MultiRowItemView):
+    model_class = SoleProprietorshipIncome
+    serializer_class = SoleProprietorshipIncomeSerializer
+    section_name = 'Sole Proprietorship'
 
 
 # Immovable Properties
