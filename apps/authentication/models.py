@@ -23,8 +23,8 @@ class CustomUser(AbstractUser):
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
     must_change_password = models.BooleanField(default=False)
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username']
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email']
 
     class Meta:
         db_table = 'users'
