@@ -11,7 +11,7 @@ import shutil
 from .models import (
     TaxYear, TaxSubmission, LocalEmploymentIncome, ForeignIncome,
     TerminalBenefit, RentIncome, InterestIncome, DividendIncome,
-    SoleProprietorshipIncome, OtherIncome, QualifyingPayments,
+    SoleProprietorshipIncome, OtherIncome, TBSecuritiesIncome, QualifyingPayments,
     SelfAssessmentPayment, TaxCredits, ImmovableProperty, MotorVehicle,
     BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
     BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
@@ -24,6 +24,7 @@ from .serializers import (
     LocalEmploymentIncomeSerializer, ForeignIncomeSerializer,
     TerminalBenefitSerializer, RentIncomeSerializer, InterestIncomeSerializer,
     DividendIncomeSerializer, SoleProprietorshipIncomeSerializer, OtherIncomeSerializer,
+    TBSecuritiesIncomeSerializer,
     QualifyingPaymentsSerializer, SelfAssessmentPaymentSerializer,
     TaxCreditsSerializer, ImmovablePropertySerializer, MotorVehicleSerializer,
     BankBalanceSerializer, SharesStocksSerializer, CashInHandSerializer,
@@ -590,6 +591,175 @@ class OtherIncomeView(SectionUpdateView):
     model_class = OtherIncome
     serializer_class = OtherIncomeSerializer
     section_name = 'Other Income'
+
+
+class TBSecuritiesIncomeView(SectionUpdateView):
+    model_class = TBSecuritiesIncome
+    serializer_class = TBSecuritiesIncomeSerializer
+    section_name = 'TB & Securities Income'
+
+
+class CashFlowSuggestedView(APIView):
+    """Aggregates source data to compute suggested R&P field values."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, submission_id):
+        submission = _get_submission_for_user(submission_id, request.user)
+        if not submission:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        sub = TaxSubmission.objects.select_related(
+            'local_employment', 'foreign_income', 'rent_income', 'interest_income',
+            'dividend_income', 'other_income', 'qualifying_payments', 'tax_credits',
+            'cash_in_hand', 'tb_securities', 'gold_jewellery', 'tax_year',
+        ).prefetch_related(
+            'sole_proprietorships', 'self_assessment_payments', 'bank_balances',
+            'immovable_properties', 'motor_vehicles', 'disposals', 'liabilities',
+            'loans_given', 'shares_stocks', 'other_assets',
+        ).get(pk=submission_id)
+
+        year_start = sub.tax_year.assessment_year_start
+        year_end = sub.tax_year.assessment_year_end
+
+        def fv(val):
+            return float(val) if val is not None else 0.0
+
+        def amt(v):
+            n = round(fv(v))
+            return str(n) if n > 0 else ''
+
+        # Employment
+        lei = getattr(sub, 'local_employment', None)
+        emp = fv(lei.amount) if lei else 0.0
+
+        # Interest — FD (amount_invested > 0) vs savings
+        fd_interest = sum(fv(b.interest) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
+        sav_interest = sum(fv(b.interest) for b in sub.bank_balances.all() if fv(b.amount_invested) == 0)
+
+        # Rent
+        ri = getattr(sub, 'rent_income', None)
+        rent = fv(ri.gross_amount) if ri else 0.0
+
+        # TB & Securities
+        tbs = getattr(sub, 'tb_securities', None)
+        tb_sec = fv(tbs.gross_amount) if tbs else 0.0
+
+        # Dividend (taxable + exempt)
+        di = getattr(sub, 'dividend_income', None)
+        dividend = (fv(di.amount) + fv(di.exempt_amount)) if di else 0.0
+
+        # Sole proprietorship drawings
+        sole_total = sum(fv(sp.amount) for sp in sub.sole_proprietorships.all())
+
+        # Disposals by category
+        disposals_by_cat = {}
+        for d in sub.disposals.all():
+            cat = d.category if d.category else 'other'
+            disposals_by_cat[cat] = disposals_by_cat.get(cat, 0.0) + fv(d.sales_proceed)
+
+        # New loans received during year
+        new_bank_loans = sum(
+            fv(l.original_amount) for l in sub.liabilities.all()
+            if l.date_of_commencement and year_start <= l.date_of_commencement <= year_end
+        )
+
+        # Asset purchases during year
+        land_purchases = sum(
+            fv(p.cost) for p in sub.immovable_properties.all()
+            if p.date_of_acquisition and year_start <= p.date_of_acquisition <= year_end
+        )
+        vehicle_purchases = sum(
+            fv(v.cost_market_value) for v in sub.motor_vehicles.all()
+            if v.date_of_acquisition and year_start <= v.date_of_acquisition <= year_end
+        )
+        shares_purchases = sum(
+            fv(s.cost_market_value) for s in sub.shares_stocks.all()
+            if s.date_of_acquisition and year_start <= s.date_of_acquisition <= year_end
+        )
+        other_asset_purchases = sum(
+            fv(a.cost_value) for a in sub.other_assets.all()
+            if a.date_of_acquisition and year_start <= a.date_of_acquisition <= year_end
+        )
+
+        # Loan repayments
+        bank_repayments = sum(fv(l.amount_repaid_during_year) for l in sub.liabilities.all())
+
+        # Gold/jewellery value
+        gold = getattr(sub, 'gold_jewellery', None)
+        gold_val = fv(gold.value) if gold else 0.0
+
+        # Loans given
+        loans_given_total = sum(fv(l.amount) for l in sub.loans_given.all())
+
+        # Tax credits
+        tc = getattr(sub, 'tax_credits', None)
+        wht_total = fv(tc.wht_rent_interest_service) if tc else 0.0
+        apit = fv(tc.apit_on_salary) if tc else 0.0
+
+        # Self-assessment tax payments
+        sap_total = sum(fv(p.amount) for p in sub.self_assessment_payments.all())
+
+        # Closing bank balances (from bank_balances.balance)
+        closing_banks = [
+            {'bank_name': b.bank_name or '', 'account_no': b.account_no or '', 'amount': str(round(fv(b.balance)))}
+            for b in sub.bank_balances.all()
+            if fv(b.balance) != 0
+        ]
+
+        # Cash in hand
+        cih = getattr(sub, 'cash_in_hand', None)
+        closing_cash = fv(cih.amount) if cih else 0.0
+
+        # Other income → receipt_other_items
+        oi = getattr(sub, 'other_income', None)
+        receipt_other_items = []
+        if oi and fv(oi.amount) > 0:
+            receipt_other_items.append({'description': 'Other', 'amount': str(round(fv(oi.amount)))})
+
+        # FD investments + donations → payment_other_items
+        payment_other_items = []
+        fd_invest_total = sum(fv(b.amount_invested) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
+        if fd_invest_total > 0:
+            payment_other_items.append({'description': 'Other', 'amount': str(round(fd_invest_total))})
+        qp = getattr(sub, 'qualifying_payments', None)
+        if qp:
+            if fv(qp.donation_charitable) > 0:
+                payment_other_items.append({'description': 'Charitable Donations', 'amount': str(round(fv(qp.donation_charitable)))})
+            if fv(qp.donation_government) > 0:
+                payment_other_items.append({'description': 'Government Donations', 'amount': str(round(fv(qp.donation_government)))})
+            if fv(qp.solar_panels_expenditure) > 0:
+                payment_other_items.append({'description': 'Solar Panels', 'amount': str(round(fv(qp.solar_panels_expenditure)))})
+
+        suggested = {
+            'receipt_employment_income': amt(emp),
+            'receipt_interest_fds': amt(fd_interest),
+            'receipt_interest_savings': amt(sav_interest),
+            'receipt_rent_income': amt(rent),
+            'receipt_tb_securities': amt(tb_sec),
+            'receipt_sale_shares': amt(disposals_by_cat.get('shares', 0)),
+            'receipt_dividend_income': amt(dividend),
+            'receipt_drawings_sole_partner': amt(sole_total),
+            'receipt_bank_loan': amt(new_bank_loans),
+            'receipt_sale_land_building': amt(disposals_by_cat.get('land_building', 0)),
+            'receipt_sale_motor_vehicle': amt(disposals_by_cat.get('motor_vehicle', 0)),
+            'receipt_sale_other_assets': amt(disposals_by_cat.get('other', 0)),
+            'receipt_other_items': receipt_other_items,
+            'payment_purchase_land_building': amt(land_purchases),
+            'payment_purchase_motor_vehicle': amt(vehicle_purchases),
+            'payment_purchase_other_assets': amt(other_asset_purchases),
+            'payment_repayment_bank_loan': amt(bank_repayments),
+            'payment_jewellery_gems': amt(gold_val),
+            'payment_wht': amt(wht_total),
+            'payment_income_tax': amt(sap_total),
+            'payment_apit': amt(apit),
+            'payment_investment_shares': amt(shares_purchases),
+            'payment_loans_given_others': amt(loans_given_total),
+            'payment_other_items': payment_other_items,
+            'closing_cash_in_hand': amt(closing_cash),
+            'closing_favourable_banks': closing_banks,
+        }
+
+        return Response(suggested)
 
 
 class QualifyingPaymentsView(SectionUpdateView):

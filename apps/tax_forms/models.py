@@ -216,6 +216,16 @@ class OtherIncome(models.Model):
         db_table = 'other_income'
 
 
+class TBSecuritiesIncome(models.Model):
+    submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='tb_securities')
+    gross_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    wht_deducted = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'tb_securities_income'
+
+
 # ─── QUALIFYING PAYMENTS ─────────────────────────────────────────────────────
 
 class QualifyingPayments(models.Model):
@@ -376,8 +386,15 @@ class OtherAsset(models.Model):
 
 
 class DisposalOfAsset(models.Model):
+    CATEGORY_CHOICES = [
+        ('land_building', 'Land / Building'),
+        ('motor_vehicle', 'Motor Vehicle'),
+        ('shares', 'Shares / Securities'),
+        ('other', 'Other'),
+    ]
     submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='disposals')
     description = models.CharField(max_length=300, blank=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other')
     date_of_disposal = models.DateField(null=True, blank=True)
     sales_proceed = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     date_acquired = models.DateField(null=True, blank=True)

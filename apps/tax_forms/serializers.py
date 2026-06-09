@@ -3,7 +3,7 @@ from decimal import Decimal
 from .models import (
     TaxYear, TaxSubmission, LocalEmploymentIncome, ForeignIncome,
     TerminalBenefit, RentIncome, InterestIncome, DividendIncome,
-    SoleProprietorshipIncome, OtherIncome, QualifyingPayments,
+    SoleProprietorshipIncome, OtherIncome, TBSecuritiesIncome, QualifyingPayments,
     SelfAssessmentPayment, TaxCredits, ImmovableProperty, MotorVehicle,
     BankBalance, SharesStocks, CashInHand, LoansGiven, GoldSilverJewellery,
     BusinessProperty, OtherAsset, DisposalOfAsset, Liability, DeclarantDetails,
@@ -63,6 +63,12 @@ class SoleProprietorshipIncomeSerializer(serializers.ModelSerializer):
 class OtherIncomeSerializer(serializers.ModelSerializer):
     class Meta:
         model = OtherIncome
+        exclude = ['submission']
+
+
+class TBSecuritiesIncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TBSecuritiesIncome
         exclude = ['submission']
 
 
@@ -254,6 +260,7 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     dividend_income = DividendIncomeSerializer(read_only=True)
     sole_proprietorships = SoleProprietorshipIncomeSerializer(many=True, read_only=True)
     other_income = OtherIncomeSerializer(read_only=True)
+    tb_securities = TBSecuritiesIncomeSerializer(read_only=True)
     qualifying_payments = QualifyingPaymentsSerializer(read_only=True)
     self_assessment_payments = SelfAssessmentPaymentSerializer(many=True, read_only=True)
     tax_credits = TaxCreditsSerializer(read_only=True)
