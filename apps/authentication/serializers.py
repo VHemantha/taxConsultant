@@ -48,22 +48,3 @@ class ChangePasswordSerializer(serializers.Serializer):
         return value
 
 
-class RegisterClientSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
-
-    class Meta:
-        model = CustomUser
-        fields = ['email', 'username', 'first_name', 'last_name', 'password', 'phone']
-
-    def create(self, validated_data):
-        user = CustomUser.objects.create_user(
-            email=validated_data['email'],
-            username=validated_data['username'],
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            password=validated_data['password'],
-            phone=validated_data.get('phone', ''),
-            role='client',
-            must_change_password=True,
-        )
-        return user

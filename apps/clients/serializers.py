@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.db import IntegrityError
 from .models import ClientProfile
 
 User = get_user_model()
@@ -79,16 +80,19 @@ class RegisterClientSerializer(serializers.Serializer):
         else:
             consultant = request.user
 
-        user = User.objects.create_user(
-            email=validated_data['email'],
-            username=validated_data['username'],
-            first_name=validated_data['first_name'],
-            last_name=validated_data['last_name'],
-            password=validated_data['password'],
-            phone=validated_data.get('phone', ''),
-            role='client',
-            must_change_password=True,
-        )
+        try:
+            user = User.objects.create_user(
+                email=validated_data['email'],
+                username=validated_data['username'],
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                password=validated_data['password'],
+                phone=validated_data.get('phone', ''),
+                role='client',
+                must_change_password=True,
+            )
+        except IntegrityError:
+            raise serializers.ValidationError({'username': 'A user with this username already exists.'})
 
         profile = ClientProfile.objects.create(
             user=user,
