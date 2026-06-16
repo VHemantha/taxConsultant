@@ -11,6 +11,7 @@ class Document(models.Model):
         ('rent_agreement', 'Rent Agreement / WHT Deduction Certificates'),
         ('bank_balance_confirmation', 'WHT Certificates'),
         ('dividend_certificate', 'Dividend Certificate (Dividend Warrant)'),
+        ('tb_securities_certificate', 'T-Bill / Securities Income Certificates'),
         ('partnership_accounts', 'Receipt & Payment Details / Partnership Accounts'),
         ('other_income_proof', 'Other Income Proof Documents'),
         # Qualifying payment documents
