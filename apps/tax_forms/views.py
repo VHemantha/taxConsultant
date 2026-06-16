@@ -628,6 +628,33 @@ class CashFlowSuggestedView(APIView):
             n = round(fv(v))
             return str(n) if n > 0 else ''
 
+        # Previous tax year's submission for the same client — drives opening
+        # balance carry-forward and "during the year" deltas for stock figures
+        # (loans given / FD investments) that are otherwise only captured as
+        # year-end balances in the Assets Declaration section.
+        prev_sub = TaxSubmission.objects.filter(
+            client_id=sub.client_id, tax_year__year=sub.tax_year.year - 1
+        ).select_related('cash_in_hand').prefetch_related(
+            'bank_balances', 'loans_given'
+        ).order_by('-created_at').first()
+
+        # Opening cash in hand — prior year's closing cash in hand
+        prev_cih = getattr(prev_sub, 'cash_in_hand', None) if prev_sub else None
+        opening_cash = fv(prev_cih.amount) if prev_cih else 0.0
+
+        # Opening favourable bank balances — prior year's closing bank balances
+        opening_banks = [
+            {'bank_name': b.bank_name or '', 'account_no': b.account_no or '', 'amount': str(round(fv(b.balance)))}
+            for b in (prev_sub.bank_balances.all() if prev_sub else [])
+            if fv(b.balance) != 0
+        ]
+
+        prev_fd_invest_total = sum(
+            fv(b.amount_invested) for b in (prev_sub.bank_balances.all() if prev_sub else [])
+            if fv(b.amount_invested) > 0
+        )
+        prev_loans_given_total = sum(fv(l.amount) for l in (prev_sub.loans_given.all() if prev_sub else []))
+
         # Employment
         lei = getattr(sub, 'local_employment', None)
         emp = fv(lei.amount) if lei else 0.0
@@ -688,8 +715,10 @@ class CashFlowSuggestedView(APIView):
         gold = getattr(sub, 'gold_jewellery', None)
         gold_val = fv(gold.value) if gold else 0.0
 
-        # Loans given
+        # Loans given — increase over prior year's closing balance (amount newly
+        # lent during the year, since the Assets Declaration figure is a year-end balance)
         loans_given_total = sum(fv(l.amount) for l in sub.loans_given.all())
+        loans_given_during_year = max(0.0, loans_given_total - prev_loans_given_total)
 
         # Tax credits
         tc = getattr(sub, 'tax_credits', None)
@@ -717,10 +746,13 @@ class CashFlowSuggestedView(APIView):
             receipt_other_items.append({'description': 'Other', 'amount': str(round(fv(oi.amount)))})
 
         # FD investments + donations → payment_other_items
+        # FD investment figure in the Assets Declaration is a year-end balance,
+        # so the increase over last year's balance is what was invested this year.
         payment_other_items = []
         fd_invest_total = sum(fv(b.amount_invested) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
-        if fd_invest_total > 0:
-            payment_other_items.append({'description': 'Other', 'amount': str(round(fd_invest_total))})
+        fd_invest_during_year = max(0.0, fd_invest_total - prev_fd_invest_total)
+        if fd_invest_during_year > 0:
+            payment_other_items.append({'description': 'Investment in Fixed Deposits', 'amount': str(round(fd_invest_during_year))})
         qp = getattr(sub, 'qualifying_payments', None)
         if qp:
             if fv(qp.donation_charitable) > 0:
@@ -731,6 +763,8 @@ class CashFlowSuggestedView(APIView):
                 payment_other_items.append({'description': 'Solar Panels', 'amount': str(round(fv(qp.solar_panels_expenditure)))})
 
         suggested = {
+            'opening_cash_in_hand': amt(opening_cash),
+            'opening_favourable_banks': opening_banks,
             'receipt_employment_income': amt(emp),
             'receipt_interest_fds': amt(fd_interest),
             'receipt_interest_savings': amt(sav_interest),
@@ -753,7 +787,7 @@ class CashFlowSuggestedView(APIView):
             'payment_income_tax': amt(sap_total),
             'payment_apit': amt(apit),
             'payment_investment_shares': amt(shares_purchases),
-            'payment_loans_given_others': amt(loans_given_total),
+            'payment_loans_given_others': amt(loans_given_during_year),
             'payment_other_items': payment_other_items,
             'closing_cash_in_hand': amt(closing_cash),
             'closing_favourable_banks': closing_banks,
