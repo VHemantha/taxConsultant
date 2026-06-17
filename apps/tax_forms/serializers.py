@@ -163,6 +163,15 @@ class DeclarantDetailsSerializer(serializers.ModelSerializer):
 
 
 class CashFlowStatementSerializer(serializers.ModelSerializer):
+    # EncryptedJSONField extends models.TextField, so DRF auto-generates a
+    # CharField for these — explicitly declare them as list fields instead.
+    opening_favourable_banks  = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    opening_overdraft_banks   = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    receipt_other_items       = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    payment_other_items       = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    closing_favourable_banks  = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    closing_overdraft_banks   = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+
     class Meta:
         model = CashFlowStatement
         exclude = ['submission']
