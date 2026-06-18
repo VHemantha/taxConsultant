@@ -653,7 +653,6 @@ class CashFlowSuggestedView(APIView):
             fv(b.amount_invested) for b in (prev_sub.bank_balances.all() if prev_sub else [])
             if fv(b.amount_invested) > 0
         )
-        prev_loans_given_total = sum(fv(l.amount) for l in (prev_sub.loans_given.all() if prev_sub else []))
 
         # Employment — local + all foreign income streams
         lei = getattr(sub, 'local_employment', None)
@@ -719,10 +718,11 @@ class CashFlowSuggestedView(APIView):
         gold = getattr(sub, 'gold_jewellery', None)
         gold_val = fv(gold.value) if gold else 0.0
 
-        # Loans given — increase over prior year's closing balance (amount newly
-        # lent during the year, since the Assets Declaration figure is a year-end balance)
-        loans_given_total = sum(fv(l.amount) for l in sub.loans_given.all())
-        loans_given_during_year = max(0.0, loans_given_total - prev_loans_given_total)
+        # Loans given — given_during_year feeds payment_loans_given_others;
+        # cash_received_from_debtors feeds receipt_debtor_received
+        lg = getattr(sub, 'loans_given', None)
+        loans_given_during_year = fv(lg.given_during_year)          if lg else 0.0
+        debtor_received         = fv(lg.cash_received_from_debtors) if lg else 0.0
 
         # Tax credits
         tc = getattr(sub, 'tax_credits', None)
@@ -778,6 +778,7 @@ class CashFlowSuggestedView(APIView):
             'receipt_dividend_income': amt(dividend),
             'receipt_drawings_sole_partner': amt(sole_total),
             'receipt_bank_loan': amt(new_bank_loans),
+            'receipt_debtor_received': amt(debtor_received),
             'receipt_sale_land_building': amt(disposals_by_cat.get('land_building', 0)),
             'receipt_sale_motor_vehicle': amt(disposals_by_cat.get('motor_vehicle', 0)),
             'receipt_sale_other_assets': amt(disposals_by_cat.get('other', 0)),
@@ -1000,14 +1001,8 @@ class SharesItemView(MultiRowItemView):
     section_name = 'Shares & Stocks'
 
 
-# Loans Given
-class LoansGivenListView(MultiRowSectionView):
-    model_class = LoansGiven
-    serializer_class = LoansGivenSerializer
-    section_name = 'Loans Given'
-
-
-class LoansGivenItemView(MultiRowItemView):
+# Loans Given — single aggregate record per submission
+class LoansGivenView(SectionUpdateView):
     model_class = LoansGiven
     serializer_class = LoansGivenSerializer
     section_name = 'Loans Given'
@@ -1861,13 +1856,12 @@ def _prefill_from_previous(new_submission, prev_submission):
             value=g.value,
         )
 
-    # Loans Given — carry forward as-is
-    for ln in prev_submission.loans_given.all():
+    # Loans Given — carry closing balance forward as next year's opening balance
+    prev_lg = getattr(prev_submission, 'loans_given', None)
+    if prev_lg:
         LoansGiven.objects.create(
             submission=new_submission,
-            borrower_name=ln.borrower_name,
-            amount=ln.amount,
-            notes=ln.notes,
+            opening_balance=prev_lg.amount,
         )
 
     # Business Properties — name only; account balances reset (change each year)

@@ -337,10 +337,12 @@ class CashInHand(models.Model):
 
 
 class LoansGiven(models.Model):
-    submission = models.ForeignKey(TaxSubmission, on_delete=models.CASCADE, related_name='loans_given')
-    borrower_name = EncryptedCharField(max_length=200, blank=True)
-    amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    notes = models.TextField(blank=True, null=True)
+    """Aggregate single-record loans given & amount receivable as at 31 March."""
+    submission = models.OneToOneField(TaxSubmission, on_delete=models.CASCADE, related_name='loans_given')
+    opening_balance           = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    given_during_year         = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    cash_received_from_debtors = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))  # closing balance
 
     class Meta:
         db_table = 'loans_given'
@@ -549,6 +551,7 @@ class CashFlowStatement(models.Model):
     receipt_drawings_sole_partner   = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_bank_loan               = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_other_loans             = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    receipt_debtor_received         = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_sale_land_building      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_sale_motor_vehicle      = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     receipt_sale_other_assets       = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))

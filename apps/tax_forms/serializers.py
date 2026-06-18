@@ -123,7 +123,7 @@ class CashInHandSerializer(serializers.ModelSerializer):
 class LoansGivenSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoansGiven
-        exclude = ['submission']
+        fields = ['id', 'opening_balance', 'given_during_year', 'cash_received_from_debtors', 'amount']
 
 
 class GoldSilverJewellerySerializer(serializers.ModelSerializer):
@@ -287,7 +287,9 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     declarant_details = DeclarantDetailsSerializer(read_only=True)
     wht_certificates = WHTCertificateSerializer(many=True, read_only=True)
     cash_flow = CashFlowStatementSerializer(read_only=True)
-    tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
+    tax_year_label        = serializers.CharField(source='tax_year.label',                read_only=True)
+    assessment_year_start = serializers.DateField(source='tax_year.assessment_year_start', read_only=True)
+    assessment_year_end   = serializers.DateField(source='tax_year.assessment_year_end',   read_only=True)
     client_name = serializers.SerializerMethodField()
     client_email = serializers.EmailField(source='client.email', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
