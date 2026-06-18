@@ -655,13 +655,17 @@ class CashFlowSuggestedView(APIView):
         )
         prev_loans_given_total = sum(fv(l.amount) for l in (prev_sub.loans_given.all() if prev_sub else []))
 
-        # Employment
+        # Employment — local + all foreign income streams
         lei = getattr(sub, 'local_employment', None)
+        fi  = getattr(sub, 'foreign_income', None)
         emp = fv(lei.amount) if lei else 0.0
+        emp += (fv(fi.employment_service_fee) + fv(fi.foreign_business_income) + fv(fi.other_foreign_income)) if fi else 0.0
 
-        # Interest — FD (amount_invested > 0) vs savings
-        fd_interest = sum(fv(b.interest) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
-        sav_interest = sum(fv(b.interest) for b in sub.bank_balances.all() if fv(b.amount_invested) == 0)
+        # Interest — FD interest from bank balance declarations; savings from
+        # the dedicated Interest Income section (Total Interest Received field)
+        fd_interest  = sum(fv(b.interest) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
+        ii           = getattr(sub, 'interest_income', None)
+        sav_interest = fv(ii.amount) if ii else 0.0
 
         # Rent
         ri = getattr(sub, 'rent_income', None)
