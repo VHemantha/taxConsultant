@@ -714,10 +714,6 @@ class CashFlowSuggestedView(APIView):
         # Loan repayments
         bank_repayments = sum(fv(l.amount_repaid_during_year) for l in sub.liabilities.all())
 
-        # Gold/jewellery value
-        gold = getattr(sub, 'gold_jewellery', None)
-        gold_val = fv(gold.value) if gold else 0.0
-
         # Loans given — given_during_year feeds payment_loans_given_others;
         # cash_received_from_debtors feeds receipt_debtor_received
         lg = getattr(sub, 'loans_given', None)
@@ -763,8 +759,6 @@ class CashFlowSuggestedView(APIView):
                 payment_other_items.append({'description': 'Charitable Donations', 'amount': str(round(fv(qp.donation_charitable)))})
             if fv(qp.donation_government) > 0:
                 payment_other_items.append({'description': 'Government Donations', 'amount': str(round(fv(qp.donation_government)))})
-            if fv(qp.solar_panels_expenditure) > 0:
-                payment_other_items.append({'description': 'Solar Panels', 'amount': str(round(fv(qp.solar_panels_expenditure)))})
 
         suggested = {
             'opening_cash_in_hand': amt(opening_cash),
@@ -787,7 +781,6 @@ class CashFlowSuggestedView(APIView):
             'payment_purchase_motor_vehicle': amt(vehicle_purchases),
             'payment_purchase_other_assets': amt(other_asset_purchases),
             'payment_repayment_bank_loan': amt(bank_repayments),
-            'payment_jewellery_gems': amt(gold_val),
             'payment_wht': amt(wht_total),
             'payment_income_tax': amt(sap_total),
             'payment_apit': amt(apit),
