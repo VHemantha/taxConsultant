@@ -130,11 +130,17 @@ def calculate_full_tax(submission) -> dict:
     if hasattr(submission, 'other_income'):
         other_inc = submission.other_income.amount or Decimal('0.00')
 
+    tb_securities = Decimal('0.00')
+    tb_securities_wht = Decimal('0.00')
+    if hasattr(submission, 'tb_securities'):
+        tb_securities     = submission.tb_securities.gross_amount or Decimal('0.00')
+        tb_securities_wht = submission.tb_securities.wht_deducted  or Decimal('0.00')
+
     # Total Assessable Income — foreign income is included (taxed at normal progressive rates)
     # Exempt dividends excluded per Change 16
     total_assessable = (
         local_emp + foreign + terminal + rent_gross +
-        interest + dividend_taxable + sole_prop + other_inc
+        interest + dividend_taxable + sole_prop + other_inc + tb_securities
     )
 
     # ── 2. Qualifying Payments & Reliefs ────────────────────────────────────
@@ -182,8 +188,8 @@ def calculate_full_tax(submission) -> dict:
     for sap in submission.self_assessment_payments.all():
         self_assessment_total += sap.amount or Decimal('0.00')
 
-    # WHT deducted at source on rent, interest, and sole proprietorship income
-    wht = wht_certs + rent_wht + interest_wht + sole_prop_wht
+    # WHT deducted at source on rent, interest, sole proprietorship, and TB/securities income
+    wht = wht_certs + rent_wht + interest_wht + sole_prop_wht + tb_securities_wht
 
     total_credits = apit + wht + partnership_credit + self_assessment_total
 
@@ -210,6 +216,7 @@ def calculate_full_tax(submission) -> dict:
         'wht_rent': rent_wht,
         'wht_interest': interest_wht,
         'wht_sole_prop': sole_prop_wht,
+        'wht_tb_securities': tb_securities_wht,
         'foreign_income': foreign,
         'foreign_income_tax': foreign_tax_net,      # net flat-15% tax after foreign tax credit
         'net_tax_payable': net_tax,
