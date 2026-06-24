@@ -1224,22 +1224,20 @@ def _add_assets_liabilities(els, st, submission):
         els.append(Spacer(1, 3))
 
     # Cash, Gold, Loans given (cage rows)
-    cih         = getattr(submission, 'cash_in_hand', None)
-    gold        = getattr(submission, 'gold_jewellery', None)
-    loans_given = submission.loans_given.all()
+    cih  = getattr(submission, 'cash_in_hand',   None)
+    gold = getattr(submission, 'gold_jewellery', None)
+    lg   = getattr(submission, 'loans_given',    None)  # OneToOneField — single aggregate record
 
     cih_amt  = _D(cih  and cih.amount)
     gold_val = _D(gold and gold.value)
-    lg_total = sum(_D(lg.amount) for lg in loans_given)
+    lg_amt   = _D(lg   and lg.amount)
 
-    if cih_amt > 0 or gold_val > 0 or loans_given.exists():
+    if cih_amt > 0 or gold_val > 0 or lg_amt > 0:
         cage_rows = []
         if cih_amt > 0:
             cage_rows.append(_cr(st, 'Cash in hand (Rs.)', 1019, cih_amt))
-        if loans_given.exists():
-            for lg in loans_given:
-                cage_rows.append(_cr(st,
-                    f'Loan given — {lg.borrower_name or "borrower"} (Rs.)', 1020, lg.amount))
+        if lg_amt > 0:
+            cage_rows.append(_cr(st, 'Loans given / receivable as at 31 March (Rs.)', 1020, lg_amt))
         if gold_val > 0:
             cage_rows.append(_cr(st,
                 f'Gold / silver / jewellery — {gold.description or ""} (Rs.)', 1021, gold_val))

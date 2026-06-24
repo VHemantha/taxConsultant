@@ -504,12 +504,7 @@ class GeneratePDFView(APIView):
         except TaxSubmission.DoesNotExist:
             raise Http404
 
-        try:
-            pdf_buffer = generate_tax_submission_pdf(submission, include_assets_liabilities=True)
-        except Exception as exc:
-            import traceback
-            return Response({'error': str(exc), 'trace': traceback.format_exc()}, status=500)
-
+        pdf_buffer = generate_tax_submission_pdf(submission, include_assets_liabilities=True)
         filename = f"Tax_Return_{submission.tax_year.label.replace('/', '-')}_{submission.client.email}.pdf"
 
         return FileResponse(
