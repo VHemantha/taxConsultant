@@ -203,6 +203,9 @@ class TaxSubmissionListCreateView(APIView):
             profile.status = 'in_progress'
             profile.save(update_fields=['status'])
 
+        # Seed declarant details from client profile so the Review step never blocks
+        _seed_declarant_from_profile(submission)
+
         return Response(TaxSubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
@@ -225,6 +228,10 @@ class TaxSubmissionDetailView(APIView):
         submission = self.get_submission(pk, request.user)
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # Back-fill declarant details for existing submissions that were created before
+        # the auto-seed logic was added (first-time clients have no previous submission).
+        if not hasattr(submission, 'declarant_details'):
+            _seed_declarant_from_profile(submission)
         return Response(TaxSubmissionSerializer(submission, context={'request': request}).data)
 
     def patch(self, request, pk):
@@ -1771,6 +1778,29 @@ class PortfolioDashboardView(APIView):
 
 # ── Assessment Year Cyclic Process ───────────────────────────────────────────
 
+def _seed_declarant_from_profile(submission):
+    """
+    Auto-create DeclarantDetails from the client's profile for first-time submissions.
+    Only called when there is no previous submission to carry forward from.
+    """
+    user = submission.client
+    profile = getattr(user, 'client_profile', None)
+    if not profile:
+        return
+    DeclarantDetails.objects.get_or_create(
+        submission=submission,
+        defaults={
+            'full_name':    profile.full_name or user.get_full_name() or user.email,
+            'email':        user.email,
+            'telephone':    profile.telephone or '',
+            'mobile':       '',
+            'nic_passport': profile.nic_passport or '',
+            'tin':          profile.tin or '',
+            'pin':          profile.pin or '',
+        },
+    )
+
+
 def _prefill_from_previous(new_submission, prev_submission):
     """
     Copy carry-forward data from the previous year's submission to the new one.
@@ -1937,6 +1967,8 @@ class SendAssessmentFormView(APIView):
 
         if prev:
             _prefill_from_previous(new_sub, prev)
+        else:
+            _seed_declarant_from_profile(new_sub)
 
         # Mark form_sent on assignment record
         ClientAssessmentYear.objects.filter(
@@ -2013,6 +2045,8 @@ class SendAssessmentFormsBulkView(APIView):
 
             if prev:
                 _prefill_from_previous(new_sub, prev)
+            else:
+                _seed_declarant_from_profile(new_sub)
 
             ClientAssessmentYear.objects.filter(
                 client=profile.user, tax_year=tax_year
