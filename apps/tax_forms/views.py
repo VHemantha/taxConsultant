@@ -47,11 +47,11 @@ User = get_user_model()
 # ── Permission helpers ────────────────────────────────────────────────────────
 
 class IsConsultant(IsAuthenticated):
-    """Allows consultant AND handling_person roles (plus admin)."""
+    """Allows consultant AND handling_person roles (plus admin and super_admin)."""
     def has_permission(self, request, view):
         return (
             super().has_permission(request, view)
-            and request.user.role in ('consultant', 'handling_person', 'admin')
+            and request.user.role in ('consultant', 'handling_person', 'admin', 'super_admin')
         )
 
 
@@ -72,7 +72,7 @@ class IsAdminOrConsultant(IsAuthenticated):
     def has_permission(self, request, view):
         return (
             super().has_permission(request, view)
-            and request.user.role in ('admin', 'consultant', 'handling_person')
+            and request.user.role in ('admin', 'super_admin', 'consultant', 'handling_person')
         )
 
 
@@ -82,7 +82,9 @@ def _get_submission_for_user(submission_id, user):
     """Return TaxSubmission accessible by client or consultant (incl. orphaned clients)."""
     from django.db.models import Q
     try:
-        if user.role == 'consultant':
+        if user.role in ('admin', 'super_admin'):
+            return TaxSubmission.objects.get(id=submission_id)
+        if user.role in ('consultant', 'handling_person'):
             assigned_ids = ClientProfile.objects.filter(
                 assigned_consultant=user
             ).values_list('user_id', flat=True)
@@ -214,13 +216,14 @@ class TaxSubmissionDetailView(APIView):
 
     def get_submission(self, pk, user):
         try:
-            if user.role == 'consultant':
+            if user.role in ('admin', 'super_admin'):
+                return TaxSubmission.objects.get(id=pk)
+            if user.role in ('consultant', 'handling_person'):
                 client_ids = ClientProfile.objects.filter(
                     assigned_consultant=user
                 ).values_list('user_id', flat=True)
                 return TaxSubmission.objects.get(id=pk, client_id__in=client_ids)
-            else:
-                return TaxSubmission.objects.get(id=pk, client=user)
+            return TaxSubmission.objects.get(id=pk, client=user)
         except TaxSubmission.DoesNotExist:
             return None
 
@@ -239,8 +242,8 @@ class TaxSubmissionDetailView(APIView):
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Only consultants can update certain fields
-        if request.user.role == 'consultant':
+        # Consultants and admins can update certain fields
+        if request.user.role in ('consultant', 'handling_person', 'admin', 'super_admin'):
             allowed_fields = ['consultant_notes', 'info_request_message', 'status']
             data = {k: v for k, v in request.data.items() if k in allowed_fields}
             for field, value in data.items():
@@ -347,12 +350,14 @@ class ConfirmCalculationView(APIView):
     permission_classes = [IsConsultant]
 
     def post(self, request, pk):
-        client_ids = ClientProfile.objects.filter(
-            assigned_consultant=request.user
-        ).values_list('user_id', flat=True)
-
         try:
-            submission = TaxSubmission.objects.get(id=pk, client_id__in=client_ids)
+            if request.user.role in ('admin', 'super_admin'):
+                submission = TaxSubmission.objects.get(id=pk)
+            else:
+                client_ids = ClientProfile.objects.filter(
+                    assigned_consultant=request.user
+                ).values_list('user_id', flat=True)
+                submission = TaxSubmission.objects.get(id=pk, client_id__in=client_ids)
         except TaxSubmission.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -481,7 +486,9 @@ class GeneratePDFView(APIView):
 
     def get(self, request, pk):
         try:
-            if request.user.role in ('consultant', 'super_admin', 'admin', 'accounts_division'):
+            if request.user.role in ('admin', 'super_admin'):
+                submission = TaxSubmission.objects.get(id=pk)
+            elif request.user.role in ('consultant', 'handling_person', 'accounts_division'):
                 client_ids = ClientProfile.objects.filter(
                     assigned_consultant=request.user
                 ).values_list('user_id', flat=True)
@@ -858,13 +865,13 @@ class MultiRowSectionView(APIView):
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         if submission.status == 'archived':
             return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
-        if request.user.role != 'consultant' and submission.status not in ['draft', 'info_requested']:
+        if request.user.role not in ('consultant', 'handling_person', 'admin', 'super_admin') and submission.status not in ['draft', 'info_requested']:
             return Response({'error': 'Cannot edit in current status.'}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             obj = serializer.save(submission=submission)
-            if request.user.role == 'consultant':
+            if request.user.role in ('consultant', 'handling_person', 'admin', 'super_admin'):
                 _log_edit(
                     submission, request.user,
                     section=self.section_name or self.model_class.__name__,
@@ -885,8 +892,11 @@ class MultiRowItemView(APIView):
     def get_object(self, pk, user):
         try:
             obj = self.model_class.objects.select_related('submission').get(id=pk)
-            # Clients can only access their own; consultants can access assigned clients
-            if user.role == 'consultant':
+            # Admins can access any submission row
+            if user.role in ('admin', 'super_admin'):
+                return obj
+            # Consultants can access assigned clients
+            if user.role in ('consultant', 'handling_person'):
                 allowed = _get_submission_for_user(obj.submission_id, user)
                 if not allowed:
                     return None

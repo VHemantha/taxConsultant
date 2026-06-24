@@ -72,7 +72,7 @@ def calculate_full_tax(submission) -> dict:
     Calculate full tax liability for a submission.
     Returns a dict with all calculated values and a detailed slab breakdown.
 
-    All income sources (including foreign) are included in assessable income.
+    Foreign income is excluded from assessable income and taxed separately at flat 15%.
     Exempt dividends are excluded from TAI and tracked separately.
     Rent relief is auto-calculated at 25% of gross rent.
     Foreign tax paid is treated as a direct tax credit (cage 901, Schedule 9).
@@ -136,10 +136,10 @@ def calculate_full_tax(submission) -> dict:
         tb_securities     = submission.tb_securities.gross_amount or Decimal('0.00')
         tb_securities_wht = submission.tb_securities.wht_deducted  or Decimal('0.00')
 
-    # Total Assessable Income — foreign income is included (taxed at normal progressive rates)
+    # Total Assessable Income — foreign income excluded (taxed separately at flat 15% below)
     # Exempt dividends excluded per Change 16
     total_assessable = (
-        local_emp + foreign + terminal + rent_gross +
+        local_emp + terminal + rent_gross +
         interest + dividend_taxable + sole_prop + other_inc + tb_securities
     )
 
@@ -194,8 +194,8 @@ def calculate_full_tax(submission) -> dict:
     total_credits = apit + wht + partnership_credit + self_assessment_total
 
     # ── 6. Foreign income tax @ flat 15% (Schedule 9 cage 901) ──────────────
-    # Foreign income is included in assessable income (taxed at progressive rates above)
-    # AND separately taxed at a flat 15%. Foreign tax paid abroad offsets the flat 15% only.
+    # Foreign income is excluded from progressive slabs and taxed only at flat 15%.
+    # Foreign tax paid abroad offsets the flat 15% liability.
     foreign_tax_gross = (foreign * FOREIGN_INCOME_TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     foreign_tax_net = max(Decimal('0.00'), foreign_tax_gross - foreign_tax_paid)
 
