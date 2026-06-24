@@ -241,7 +241,7 @@ def calculate_full_tax(submission) -> dict:
             'donation_government': donation_govt,
             'solar_panels': solar,
             'apit': apit,
-            'wht': wht,
+            'wht_certs': wht_certs,
             'partnership_credit': partnership_credit,
             'self_assessment': self_assessment_total,
         }
