@@ -101,9 +101,11 @@ class EncryptedJSONField(EncryptedFieldMixin, models.TextField):
         if not raw:
             return []
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            # Always return a list or dict — never a bare string/int
+            return parsed if isinstance(parsed, (list, dict)) else []
         except (TypeError, ValueError):
-            return raw
+            return []
 
     def get_prep_value(self, value):
         import json
