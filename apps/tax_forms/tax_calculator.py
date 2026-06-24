@@ -72,7 +72,8 @@ def calculate_full_tax(submission) -> dict:
     Calculate full tax liability for a submission.
     Returns a dict with all calculated values and a detailed slab breakdown.
 
-    Foreign income is excluded from assessable income and taxed separately at flat 15%.
+    Foreign income is included in assessable income but excluded from progressive slab calculation.
+    It is taxed separately at a flat 15% rate (Schedule 9).
     Exempt dividends are excluded from TAI and tracked separately.
     Rent relief is auto-calculated at 25% of gross rent.
     Foreign tax paid is treated as a direct tax credit (cage 901, Schedule 9).
@@ -136,10 +137,10 @@ def calculate_full_tax(submission) -> dict:
         tb_securities     = submission.tb_securities.gross_amount or Decimal('0.00')
         tb_securities_wht = submission.tb_securities.wht_deducted  or Decimal('0.00')
 
-    # Total Assessable Income — foreign income excluded (taxed separately at flat 15% below)
-    # Exempt dividends excluded per Change 16
+    # Total Assessable Income — includes all income sources including foreign.
+    # Exempt dividends excluded per Change 16.
     total_assessable = (
-        local_emp + terminal + rent_gross +
+        local_emp + foreign + terminal + rent_gross +
         interest + dividend_taxable + sole_prop + other_inc + tb_securities
     )
 
@@ -168,9 +169,11 @@ def calculate_full_tax(submission) -> dict:
     if net_taxable < 0:
         net_taxable = Decimal('0.00')
 
-    # ── 4. Tax Computation with slab breakdown (Change 19) ──────────────────
-
-    gross_tax, slab_breakdown = calculate_tax_on_income(net_taxable)
+    # ── 4. Tax Computation with slab breakdown ──────────────────────────────
+    # Progressive slabs apply only to non-foreign income.
+    # Foreign income is taxed at a flat 15% separately (Step 6).
+    slab_taxable = max(Decimal('0.00'), net_taxable - foreign)
+    gross_tax, slab_breakdown = calculate_tax_on_income(slab_taxable)
 
     # ── 5. Tax Credits ───────────────────────────────────────────────────────
 
@@ -188,10 +191,9 @@ def calculate_full_tax(submission) -> dict:
     for sap in submission.self_assessment_payments.all():
         self_assessment_total += sap.amount or Decimal('0.00')
 
-    # WHT deducted at source on rent, interest, sole proprietorship, and TB/securities income
-    wht = wht_certs + rent_wht + interest_wht + sole_prop_wht + tb_securities_wht
-
-    total_credits = apit + wht + partnership_credit + self_assessment_total
+    # Tax credits come only from the Tax Credits section (wht_certs is auto-populated
+    # from income section WHT totals — adding income WHT separately would double-count).
+    total_credits = apit + wht_certs + partnership_credit + self_assessment_total
 
     # ── 6. Foreign income tax @ flat 15% (Schedule 9 cage 901) ──────────────
     # Foreign income is excluded from progressive slabs and taxed only at flat 15%.
