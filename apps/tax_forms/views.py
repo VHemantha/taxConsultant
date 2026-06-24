@@ -504,7 +504,12 @@ class GeneratePDFView(APIView):
         except TaxSubmission.DoesNotExist:
             raise Http404
 
-        pdf_buffer = generate_tax_submission_pdf(submission, include_assets_liabilities=True)
+        try:
+            pdf_buffer = generate_tax_submission_pdf(submission, include_assets_liabilities=True)
+        except Exception as exc:
+            import traceback
+            return Response({'error': str(exc), 'trace': traceback.format_exc()}, status=500)
+
         filename = f"Tax_Return_{submission.tax_year.label.replace('/', '-')}_{submission.client.email}.pdf"
 
         return FileResponse(
@@ -1204,11 +1209,17 @@ class LiveCalculateView(APIView):
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         result = calculate_full_tax(submission)
-        # Convert Decimals to strings for JSON serialisation
-        return Response({
-            k: str(v) if hasattr(v, 'quantize') else v
-            for k, v in result.items()
-        })
+
+        def _serialise(v):
+            if hasattr(v, 'quantize'):   # Decimal
+                return str(v)
+            if isinstance(v, dict):
+                return {kk: _serialise(vv) for kk, vv in v.items()}
+            if isinstance(v, list):
+                return [_serialise(i) for i in v]
+            return v
+
+        return Response({k: _serialise(v) for k, v in result.items()})
 
 
 # ── Payment Status Update (Accounts Division) ─────────────────────────────────
