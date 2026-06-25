@@ -393,17 +393,18 @@ def _add_schedule_2(els, st, sole_props, fi):
 
 
 # ── Schedule 3 — Investment Income ───────────────────────────────────────────
-def _add_schedule_3(els, st, ri, ii, di, rent_relief):
+def _add_schedule_3(els, st, ri, ii, di, rent_relief, tbs=None):
     _sec(els, st, 'Schedule 3 - Investment income')
 
     rent_gross  = _D(ri and ri.gross_amount)
     int_amt     = _D(ii and ii.amount)
+    tb_amt      = _D(tbs and tbs.gross_amount)
     div_taxable = _D(di and di.amount)
     div_exempt  = _D(di and di.exempt_amount)
     rr          = _D(rent_relief)
-    total_inv   = rent_gross + int_amt   # dividends excluded — reported in Part III
+    total_inv   = rent_gross + int_amt + tb_amt   # dividends excluded — reported in Part III
 
-    # Part I — Taxable investment income (rent + interest)
+    # Part I — Taxable investment income (rent + interest + T-Bills)
     els.append(_P('Part I : Investment income (Taxable)', st['sec_hdr']))
     els.append(Spacer(1, 2))
     hdr = [
@@ -422,6 +423,11 @@ def _add_schedule_3(els, st, ri, ii, di, rent_relief):
         rows.append([_P(str(sno), st['tbl_cell']),
                      _P('Interest income (FDs / savings)', st['tbl_cell']),
                      _P(_fmt(int_amt), st['tbl_cell_r'])])
+        sno += 1
+    if tb_amt > 0:
+        rows.append([_P(str(sno), st['tbl_cell']),
+                     _P('T-Bills & Securities income', st['tbl_cell']),
+                     _P(_fmt(tb_amt), st['tbl_cell_r'])])
     cw = [UW*0.06, UW*0.64, UW*0.30]
     els.append(KeepTogether(_sched_table(hdr, rows, cw, st)))
     els.append(Spacer(1, 3))
@@ -1509,6 +1515,7 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=True) -> 
     sole_props_pdf = list(submission.sole_proprietorships.all())
     sole_prop_total_pdf = sum(sp.amount or Decimal('0') for sp in sole_props_pdf)
     oi        = getattr(submission, 'other_income',        None)
+    tbs       = getattr(submission, 'tb_securities',       None)
     qp        = getattr(submission, 'qualifying_payments', None)
     tc        = getattr(submission, 'tax_credits',         None)
     dd        = getattr(submission, 'declarant_details',   None)
@@ -1532,7 +1539,7 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=True) -> 
     # Cage values for official return
     cage_10  = _D(lei and lei.amount) + _D(fi and fi.employment_service_fee)
     cage_20  = sole_prop_total_pdf + _D(fi and fi.foreign_business_income)
-    cage_30  = _D(ri and ri.gross_amount) + _D(ii and ii.amount) + _D(di and di.amount)
+    cage_30  = _D(ri and ri.gross_amount) + _D(ii and ii.amount) + _D(di and di.amount) + _D(tbs and tbs.gross_amount)
     cage_40  = _D(oi and oi.amount) + _D(fi and fi.other_foreign_income)
     cage_50  = _D(submission.total_assessable_income)
     cage_60  = _D(submission.rent_relief)
@@ -1569,7 +1576,7 @@ def generate_tax_submission_pdf(submission, include_assets_liabilities=True) -> 
 
     _add_schedule_1(els, st, lei, fi, tb)
     _add_schedule_2(els, st, sole_props_pdf, fi)
-    _add_schedule_3(els, st, ri, ii, di, cage_60)
+    _add_schedule_3(els, st, ri, ii, di, cage_60, tbs)
     _add_schedule_4(els, st, oi, fi)
     _add_schedule_5(els, st, qp, cage_100)
     _add_schedule_6(els, st, di, wht_certs)
