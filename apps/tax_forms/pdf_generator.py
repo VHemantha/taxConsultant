@@ -4,7 +4,7 @@ Replicates the official Sri Lanka IRD "Individual income tax - Confirmation" for
 """
 import os
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -656,6 +656,20 @@ def _add_schedule_8(els, st, submission):
     taxable   = _D(submission.net_taxable_income)
     gross_tax = _D(submission.gross_tax)
 
+    # Foreign income amounts for 809.B
+    fi_obj = getattr(submission, 'foreign_income', None)
+    foreign_total = (
+        _D(fi_obj and fi_obj.employment_service_fee) +
+        _D(fi_obj and fi_obj.foreign_business_income) +
+        _D(fi_obj and fi_obj.other_foreign_income)
+    )
+    foreign_tax_paid = _D(fi_obj and fi_obj.foreign_tax_paid)
+    ftax_gross = (foreign_total * Decimal('0.15')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    ftax_net   = max(Decimal('0'), ftax_gross - foreign_tax_paid)
+
+    # 809.A.1 = taxable income excluding foreign income (progressive slab portion)
+    slab_taxable = max(Decimal('0'), taxable - foreign_total)
+
     def _rate_tbl(rows):
         """6-col table: label | cage.1 | amt.1 | rate | cage.3 | amt.3"""
         cw = [UW*0.36, UW*0.08, UW*0.18, UW*0.07, UW*0.08, UW*0.23]
@@ -727,13 +741,13 @@ def _add_schedule_8(els, st, submission):
         _rr('Tax on taxable income from betting & gaming, manufacture & sale or import and sale of any liquor, tobacco product',
             '808.1', Decimal('0'), '40%', '808.3', Decimal('0')),
         _rr('Tax on Taxable Income to be taxed at progressive Income Tax Rates',
-            '809.A.1', taxable, '', '809.A.3', gross_tax),
-        _rr('Any other taxable income',
-            '809.B.1', Decimal('0'), '', '809.B.3', Decimal('0')),
+            '809.A.1', slab_taxable, '', '809.A.3', gross_tax),
+        _rr('Foreign income taxed at flat 15%',
+            '809.B.1', foreign_total, '15%', '809.B.3', ftax_net),
     ]))
     els.append(Spacer(1, 2))
     els.append(_cage_tbl([
-        _cr(st, 'Tax on total taxable income (808.3 + 809.A.3 + 809.B.3) (Rs.)', 810, gross_tax, bold=True),
+        _cr(st, 'Tax on total taxable income (808.3 + 809.A.3 + 809.B.3) (Rs.)', 810, gross_tax + ftax_net, bold=True),
     ]))
     els.append(Spacer(1, 4))
 
