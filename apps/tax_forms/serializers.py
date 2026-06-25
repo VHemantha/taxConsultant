@@ -278,7 +278,7 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     bank_balances = BankBalanceSerializer(many=True, read_only=True)
     shares_stocks = SharesStocksSerializer(many=True, read_only=True)
     cash_in_hand = CashInHandSerializer(read_only=True)
-    loans_given = LoansGivenSerializer(many=True, read_only=True)
+    loans_given = LoansGivenSerializer(read_only=True)
     gold_jewellery = GoldSilverJewellerySerializer(read_only=True)
     business_properties = BusinessPropertySerializer(many=True, read_only=True)
     other_assets = OtherAssetSerializer(many=True, read_only=True)

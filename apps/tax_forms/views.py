@@ -916,7 +916,7 @@ class MultiRowItemView(APIView):
         serializer = self.serializer_class(obj, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            if request.user.role == 'consultant':
+            if request.user.role in ('consultant', 'handling_person', 'admin', 'super_admin'):
                 _log_edit(
                     obj.submission, request.user,
                     section=self.section_name or self.model_class.__name__,
