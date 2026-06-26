@@ -643,9 +643,7 @@ class CashFlowSuggestedView(APIView):
             return str(n) if n > 0 else ''
 
         # Previous tax year's submission for the same client — drives opening
-        # balance carry-forward and "during the year" deltas for stock figures
-        # (loans given / FD investments) that are otherwise only captured as
-        # year-end balances in the Assets Declaration section.
+        # balance carry-forward (cash in hand + bank balances).
         prev_sub = TaxSubmission.objects.filter(
             client_id=sub.client_id, tax_year__year=sub.tax_year.year - 1
         ).select_related('cash_in_hand').prefetch_related(
@@ -662,11 +660,6 @@ class CashFlowSuggestedView(APIView):
             for b in (prev_sub.bank_balances.all() if prev_sub else [])
             if fv(b.balance) != 0
         ]
-
-        prev_fd_invest_total = sum(
-            fv(b.amount_invested) for b in (prev_sub.bank_balances.all() if prev_sub else [])
-            if fv(b.amount_invested) > 0
-        )
 
         # Employment — local + all foreign income streams
         lei = getattr(sub, 'local_employment', None)
@@ -759,14 +752,8 @@ class CashFlowSuggestedView(APIView):
         if oi and fv(oi.amount) > 0:
             receipt_other_items.append({'description': 'Other', 'amount': str(round(fv(oi.amount)))})
 
-        # FD investments + donations → payment_other_items
-        # FD investment figure in the Assets Declaration is a year-end balance,
-        # so the increase over last year's balance is what was invested this year.
+        # Donations → payment_other_items
         payment_other_items = []
-        fd_invest_total = sum(fv(b.amount_invested) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
-        fd_invest_during_year = max(0.0, fd_invest_total - prev_fd_invest_total)
-        if fd_invest_during_year > 0:
-            payment_other_items.append({'description': 'Investment in Fixed Deposits', 'amount': str(round(fd_invest_during_year))})
         qp = getattr(sub, 'qualifying_payments', None)
         if qp:
             if fv(qp.donation_charitable) > 0:
