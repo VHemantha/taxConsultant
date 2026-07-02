@@ -14,6 +14,7 @@ from apps.notifications.models import Notification
 User = get_user_model()
 
 CONSULTANT_ROLES = ('consultant', 'handling_person')
+ADMIN_ROLES = (*CONSULTANT_ROLES, 'admin', 'super_admin')
 
 
 class IsConsultant(IsAuthenticated):
@@ -28,7 +29,7 @@ class IsSuperAdmin(IsAuthenticated):
 
 class IsConsultantOrSuperAdmin(IsAuthenticated):
     def has_permission(self, request, view):
-        return super().has_permission(request, view) and request.user.role in (*CONSULTANT_ROLES, 'super_admin')
+        return super().has_permission(request, view) and request.user.role in ADMIN_ROLES
 
 
 class RegisterClientView(APIView):
@@ -63,7 +64,7 @@ class ClientListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'super_admin':
+        if user.role in ('super_admin', 'admin'):
             consultant_id = self.request.query_params.get('consultant_id')
             qs = ClientProfile.objects.all().select_related('user', 'assigned_consultant')
             if consultant_id:
@@ -81,10 +82,10 @@ class ClientDetailView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         client_id = self.kwargs.get('pk')
         user = self.request.user
+        if user.role in ('super_admin', 'admin'):
+            return ClientProfile.objects.get(id=client_id)
         if user.role in CONSULTANT_ROLES:
             return ClientProfile.objects.get(id=client_id, assigned_consultant=user)
-        if user.role == 'super_admin':
-            return ClientProfile.objects.get(id=client_id)
         return user.client_profile
 
     def patch(self, request, *args, **kwargs):

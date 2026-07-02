@@ -35,7 +35,7 @@ class RegisterClientSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=100)
     password = serializers.CharField(write_only=True, validators=[validate_password])
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    tin = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    tin = serializers.CharField(max_length=50)
     pin = serializers.CharField(max_length=50, required=False, allow_blank=True)
     nic_passport = serializers.CharField(max_length=50, required=False, allow_blank=True)
     telephone = serializers.CharField(max_length=20, required=False, allow_blank=True)
@@ -53,8 +53,20 @@ class RegisterClientSerializer(serializers.Serializer):
 
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this username already exists.")
+            raise serializers.ValidationError("A client with this username already exists.")
         return value
+
+    def validate_tin(self, value):
+        tin = value.strip()
+        if not tin:
+            raise serializers.ValidationError("TIN is required.")
+        # TIN is stored encrypted (non-deterministic), so duplicate-check by decrypting each profile.
+        for profile in ClientProfile.objects.select_related('user').only('tin', 'user__username'):
+            if profile.tin and profile.tin.strip() == tin:
+                raise serializers.ValidationError(
+                    f"A client with this TIN is already registered (username: {profile.user.username})."
+                )
+        return tin
 
     def validate_consultant_id(self, value):
         if value is not None:
@@ -98,7 +110,7 @@ class RegisterClientSerializer(serializers.Serializer):
             user=user,
             assigned_consultant=consultant,
             full_name=f"{validated_data['first_name']} {validated_data['last_name']}",
-            tin=validated_data.get('tin', ''),
+            tin=validated_data.get('tin', '').strip(),
             pin=validated_data.get('pin', ''),
             nic_passport=validated_data.get('nic_passport', ''),
             telephone=validated_data.get('telephone', ''),
