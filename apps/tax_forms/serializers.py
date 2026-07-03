@@ -343,6 +343,7 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
             'total_assessable_income', 'net_taxable_income',
             'total_tax_credits', 'net_tax_payable',
             'payment_status', 'payment_status_display', 'payment_slip_url',
+            'payment_updated_at',
             'info_request_message',
             'created_at', 'submitted_at', 'confirmed_at',
         ]

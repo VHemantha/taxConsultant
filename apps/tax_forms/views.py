@@ -415,8 +415,9 @@ class ConfirmCalculationView(APIView):
 
 
 class ClientConfirmView(APIView):
-    """Client confirms the final tax calculation."""
+    """Client acknowledges payment notice and optionally uploads bank payment slip."""
     permission_classes = [IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def post(self, request, pk):
         try:
@@ -426,7 +427,16 @@ class ClientConfirmView(APIView):
 
         submission.status = 'confirmed'
         submission.confirmed_at = timezone.now()
-        submission.save()
+        update_fields = ['status', 'confirmed_at', 'updated_at']
+
+        slip_file = request.FILES.get('payment_slip')
+        if slip_file:
+            if submission.payment_slip:
+                submission.payment_slip.delete(save=False)
+            submission.payment_slip = slip_file
+            update_fields.append('payment_slip')
+
+        submission.save(update_fields=update_fields)
 
         profile = getattr(request.user, 'client_profile', None)
 
@@ -1258,14 +1268,20 @@ class PaymentStatusView(APIView):
 # ── Accounts Division Queue ───────────────────────────────────────────────────
 
 class AccountsQueueView(APIView):
-    """Submissions awaiting payment confirmation — visible to Accounts Division."""
+    """Submissions in the accounts payment workflow — visible to Accounts Division.
+    ?confirmed=1 returns payment-confirmed records; default returns the pending queue."""
     permission_classes = [IsAccountsDivision]
 
     def get(self, request):
-        submissions = TaxSubmission.objects.filter(
-            status__in=['awaiting_confirmation', 'confirmed'],
-            payment_status='pending',
-        ).select_related('client', 'tax_year', 'reviewed_by')
+        if request.query_params.get('confirmed') == '1':
+            submissions = TaxSubmission.objects.filter(
+                payment_status='paid',
+            ).select_related('client', 'tax_year', 'reviewed_by').order_by('-payment_updated_at')
+        else:
+            submissions = TaxSubmission.objects.filter(
+                status__in=['awaiting_confirmation', 'confirmed'],
+                payment_status='pending',
+            ).select_related('client', 'tax_year', 'reviewed_by')
         return Response(TaxSubmissionListSerializer(submissions, many=True, context={'request': request}).data)
 
 
