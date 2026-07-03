@@ -627,7 +627,7 @@ class CashFlowSuggestedView(APIView):
             'dividend_income', 'other_income', 'qualifying_payments', 'tax_credits',
             'cash_in_hand', 'tb_securities', 'gold_jewellery', 'tax_year',
         ).prefetch_related(
-            'sole_proprietorships', 'self_assessment_payments', 'bank_balances',
+            'self_assessment_payments', 'bank_balances',
             'immovable_properties', 'motor_vehicles', 'disposals', 'liabilities',
             'loans_given', 'shares_stocks', 'other_assets',
         ).get(pk=submission_id)
@@ -667,9 +667,7 @@ class CashFlowSuggestedView(APIView):
         emp = fv(lei.amount) if lei else 0.0
         emp += (fv(fi.employment_service_fee) + fv(fi.foreign_business_income) + fv(fi.other_foreign_income)) if fi else 0.0
 
-        # Interest — FD interest from bank balance declarations; savings from
-        # the dedicated Interest Income section (Total Interest Received field)
-        fd_interest  = sum(fv(b.interest) for b in sub.bank_balances.all() if fv(b.amount_invested) > 0)
+        # Interest — savings from the dedicated Interest Income section (Total Interest Received field)
         ii           = getattr(sub, 'interest_income', None)
         sav_interest = fv(ii.amount) if ii else 0.0
 
@@ -684,9 +682,6 @@ class CashFlowSuggestedView(APIView):
         # Dividend (taxable + exempt)
         di = getattr(sub, 'dividend_income', None)
         dividend = (fv(di.amount) + fv(di.exempt_amount)) if di else 0.0
-
-        # Sole proprietorship drawings
-        sole_total = sum(fv(sp.amount) for sp in sub.sole_proprietorships.all())
 
         # Disposals by category
         disposals_by_cat = {}
@@ -765,13 +760,11 @@ class CashFlowSuggestedView(APIView):
             'opening_cash_in_hand': amt(opening_cash),
             'opening_favourable_banks': opening_banks,
             'receipt_employment_income': amt(emp),
-            'receipt_interest_fds': amt(fd_interest),
             'receipt_interest_savings': amt(sav_interest),
             'receipt_rent_income': amt(rent),
             'receipt_tb_securities': amt(tb_sec),
             'receipt_sale_shares': amt(disposals_by_cat.get('shares', 0)),
             'receipt_dividend_income': amt(dividend),
-            'receipt_drawings_sole_partner': amt(sole_total),
             'receipt_bank_loan': amt(new_bank_loans),
             'receipt_debtor_received': amt(debtor_received),
             'receipt_sale_land_building': amt(disposals_by_cat.get('land_building', 0)),
