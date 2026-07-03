@@ -11,6 +11,9 @@ from .views import (
     CreateConsultantView,
     ConsultantDetailView,
     TransferClientsView,
+    AccountsDivisionListView,
+    CreateAccountsDivisionView,
+    AccountsDivisionDetailView,
 )
 
 urlpatterns = [
@@ -25,4 +28,7 @@ urlpatterns = [
     path('consultants/create/', CreateConsultantView.as_view(), name='create_consultant'),
     path('consultants/<int:pk>/', ConsultantDetailView.as_view(), name='consultant_detail'),
     path('consultants/transfer/', TransferClientsView.as_view(), name='transfer_clients'),
+    path('accounts-division/', AccountsDivisionListView.as_view(), name='accounts_division_list'),
+    path('accounts-division/create/', CreateAccountsDivisionView.as_view(), name='create_accounts_division'),
+    path('accounts-division/<int:pk>/', AccountsDivisionDetailView.as_view(), name='accounts_division_detail'),
 ]

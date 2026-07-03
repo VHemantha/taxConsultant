@@ -221,6 +221,109 @@ class CreateConsultantView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class AccountsDivisionListView(APIView):
+    """Super admin: list all accounts division users."""
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        users = User.objects.filter(role='accounts_division').order_by('first_name', 'last_name')
+        return Response([
+            {
+                'id': u.id,
+                'name': u.get_full_name() or u.email,
+                'email': u.email,
+                'username': u.username,
+                'phone': u.phone,
+                'is_active': u.is_active,
+            }
+            for u in users
+        ])
+
+
+class CreateAccountsDivisionView(APIView):
+    """Super admin creates a new accounts division user account."""
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request):
+        first_name = request.data.get('first_name', '').strip()
+        last_name  = request.data.get('last_name', '').strip()
+        email      = request.data.get('email', '').strip()
+        username   = request.data.get('username', '').strip()
+        password   = request.data.get('password', '')
+        phone      = request.data.get('phone', '').strip()
+
+        errors = {}
+        if not first_name: errors['first_name'] = ['First name is required.']
+        if not last_name:  errors['last_name']  = ['Last name is required.']
+        if not email:      errors['email']       = ['Email is required.']
+        if not username:   errors['username']    = ['Username is required.']
+        if not password:   errors['password']    = ['Password is required.']
+
+        if not errors:
+            if User.objects.filter(email=email).exists():
+                errors['email'] = ['A user with this email already exists.']
+            if User.objects.filter(username=username).exists():
+                errors['username'] = ['A user with this username already exists.']
+
+        if not errors:
+            try:
+                validate_password(password)
+            except ValidationError as e:
+                errors['password'] = list(e.messages)
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        acc_user = User.objects.create_user(
+            email=email,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            password=password,
+            role='accounts_division',
+            phone=phone or None,
+            must_change_password=True,
+        )
+        return Response({
+            'id': acc_user.id,
+            'name': acc_user.get_full_name(),
+            'email': acc_user.email,
+            'username': acc_user.username,
+        }, status=status.HTTP_201_CREATED)
+
+
+class AccountsDivisionDetailView(APIView):
+    """Super admin: get details or deactivate an accounts division user."""
+    permission_classes = [IsSuperAdmin]
+
+    def _get_user(self, pk):
+        try:
+            return User.objects.get(pk=pk, role='accounts_division')
+        except User.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        u = self._get_user(pk)
+        if not u:
+            return Response({'error': 'Accounts division user not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'id': u.id,
+            'name': u.get_full_name() or u.email,
+            'email': u.email,
+            'username': u.username,
+            'phone': u.phone,
+            'is_active': u.is_active,
+        })
+
+    def delete(self, request, pk):
+        u = self._get_user(pk)
+        if not u:
+            return Response({'error': 'Accounts division user not found.'}, status=status.HTTP_404_NOT_FOUND)
+        u.is_active = False
+        u.save(update_fields=['is_active'])
+        return Response({'message': 'Accounts division user deactivated successfully.'})
+
+
 class ConsultantDetailView(APIView):
     """Super admin: get details or delete a consultant."""
     permission_classes = [IsSuperAdmin]

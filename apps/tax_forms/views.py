@@ -1821,7 +1821,7 @@ def _seed_declarant_from_profile(submission):
             'full_name':    profile.full_name or user.get_full_name() or user.email,
             'email':        user.email,
             'telephone':    profile.telephone or '',
-            'mobile':       '',
+            'mobile':       profile.mobile or '',
             'nic_passport': profile.nic_passport or '',
             'tin':          profile.tin or '',
             'pin':          profile.pin or '',
