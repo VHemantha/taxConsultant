@@ -158,17 +158,16 @@ CORS_ALLOWED_ORIGINS = config(
 CORS_ALLOW_CREDENTIALS = True
 
 # Email
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
-EMAIL_HOST='mail.dpr.lk'
-EMAIL_PORT=465
-EMAIL_USE_TLS=False
-EMAIL_USE_SSL=True
-EMAIL_HOST_USER='tms@dpr.lk'
-EMAIL_HOST_PASSWORD='Tmsdpr@456#'
-DEFAULT_FROM_EMAIL='DPR Tax Management <tms@dpr.lk>'
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = 'mail.dpr.lk'
+EMAIL_PORT = 465
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = True
+EMAIL_HOST_USER = 'tms@dpr.lk'
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = 'DPR Tax Management <tms@dpr.lk>'
 
-# Frontend portal URL (used in email action buttons)
-FRONTEND_URL='https://tax-automation-frontend.onrender.com'
+FRONTEND_URL = config('FRONTEND_URL', default='https://tax-automation-frontend.onrender.com')
 # Document Storage
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_DOCUMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
