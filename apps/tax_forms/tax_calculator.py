@@ -16,55 +16,86 @@ TAX_SLABS = [
 PERSONAL_RELIEF = Decimal('1800000.00')
 SOLAR_MAX = Decimal('600000.00')
 RENT_RELIEF_RATE = Decimal('0.25')
-FOREIGN_INCOME_TAX_RATE = Decimal('0.15')
+FOREIGN_INCOME_MAX_RATE = Decimal('0.15')  # foreign income's slab rate is capped at 15%
+
+SLAB_LABELS = [
+    'First Rs. 1,000,000 @ 6%',
+    'Next Rs. 500,000 @ 18%',
+    'Next Rs. 500,000 @ 24%',
+    'Next Rs. 500,000 @ 30%',
+    'Balance @ 36%',
+]
 
 
 def calculate_tax_on_income(taxable_income: Decimal) -> tuple[Decimal, list[dict]]:
     """
-    Calculate gross tax based on Sri Lanka tax slabs.
+    Calculate gross tax based on Sri Lanka tax slabs (local/non-foreign income only).
     Returns (gross_tax, slab_breakdown) where slab_breakdown is a list of dicts
     showing each slab's taxable amount and tax computed.
     """
-    if taxable_income <= 0:
-        return Decimal('0.00'), []
+    local_tax, _, local_breakdown, _ = calculate_mixed_tax(taxable_income, Decimal('0.00'))
+    return local_tax, local_breakdown
 
-    tax = Decimal('0.00')
-    remaining = taxable_income
-    slab_breakdown = []
-    slab_labels = [
-        'First Rs. 1,000,000 @ 6%',
-        'Next Rs. 500,000 @ 18%',
-        'Next Rs. 500,000 @ 24%',
-        'Next Rs. 500,000 @ 30%',
-        'Balance @ 36%',
-    ]
+
+def calculate_mixed_tax(taxable_local: Decimal, taxable_foreign: Decimal):
+    """
+    Apply the progressive slabs to local and foreign taxable income together.
+
+    Local income fills each slab first at the normal rate. Any slab capacity left
+    over in that bracket is then filled by foreign income, but the rate applied to
+    foreign income is capped at 15% (so the first Rs. 1,000,000 of foreign income,
+    net of whatever bracket space local income already used, is taxed at 6%, and any
+    excess is taxed at 15% rather than the higher local progressive rates).
+
+    Returns (local_tax, foreign_tax, local_breakdown, foreign_breakdown).
+    """
+    local_remaining = taxable_local if taxable_local > 0 else Decimal('0.00')
+    foreign_remaining = taxable_foreign if taxable_foreign > 0 else Decimal('0.00')
+
+    local_tax = Decimal('0.00')
+    foreign_tax = Decimal('0.00')
+    local_breakdown = []
+    foreign_breakdown = []
 
     for idx, (slab_amount, rate) in enumerate(TAX_SLABS):
-        if remaining <= 0:
+        if local_remaining <= 0 and foreign_remaining <= 0:
             break
-        if slab_amount is None:
-            applicable = remaining
-            slab_tax = (applicable * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            tax += slab_tax
-            slab_breakdown.append({
-                'label': slab_labels[idx],
+
+        capacity = slab_amount  # None means unlimited (final "balance" slab)
+
+        local_used = local_remaining if capacity is None else min(local_remaining, capacity)
+        if local_used > 0:
+            slab_tax = (local_used * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            local_tax += slab_tax
+            local_breakdown.append({
+                'label': SLAB_LABELS[idx],
                 'rate': str(rate),
-                'taxable_amount': str(applicable.quantize(Decimal('0.01'))),
+                'taxable_amount': str(local_used.quantize(Decimal('0.01'))),
                 'tax': str(slab_tax),
             })
-            break
-        applicable = min(remaining, slab_amount)
-        slab_tax = (applicable * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        tax += slab_tax
-        slab_breakdown.append({
-            'label': slab_labels[idx],
-            'rate': str(rate),
-            'taxable_amount': str(applicable.quantize(Decimal('0.01'))),
-            'tax': str(slab_tax),
-        })
-        remaining -= applicable
+            local_remaining -= local_used
+            if capacity is not None:
+                capacity -= local_used
 
-    return tax.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP), slab_breakdown
+        foreign_used = foreign_remaining if capacity is None else min(foreign_remaining, capacity)
+        if foreign_used > 0:
+            effective_rate = min(rate, FOREIGN_INCOME_MAX_RATE)
+            slab_tax = (foreign_used * effective_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            foreign_tax += slab_tax
+            foreign_breakdown.append({
+                'label': SLAB_LABELS[idx],
+                'rate': str(effective_rate),
+                'taxable_amount': str(foreign_used.quantize(Decimal('0.01'))),
+                'tax': str(slab_tax),
+            })
+            foreign_remaining -= foreign_used
+
+    return (
+        local_tax.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP),
+        foreign_tax.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP),
+        local_breakdown,
+        foreign_breakdown,
+    )
 
 
 def calculate_full_tax(submission) -> dict:
@@ -72,12 +103,15 @@ def calculate_full_tax(submission) -> dict:
     Calculate full tax liability for a submission.
     Returns a dict with all calculated values and a detailed slab breakdown.
 
-    Foreign income is included in assessable income but excluded from progressive slab calculation.
-    It is taxed separately at a flat 15% rate (Schedule 9).
+    The tax-free personal relief is applied to local (non-foreign) income first; any
+    unused balance then offsets foreign income. Local income fills the progressive
+    slabs first at normal rates, and foreign income fills the remaining slab space at
+    a rate capped at 15% (so foreign income is effectively 6% on its first bracket and
+    at most 15% beyond that, regardless of how high the local progressive rate climbs).
     Exempt dividends are excluded from TAI and tracked separately.
     Rent relief is auto-calculated at 25% of gross rent.
-    Foreign tax paid is treated as a direct tax credit (cage 901, Schedule 9).
-    Returns slab_breakdown for detailed display.
+    Foreign tax paid is treated as a direct tax credit against the foreign income tax.
+    Returns slab_breakdown for detailed display (local portion only).
     """
     # ── 1. Income sources ────────────────────────────────────────────────────
 
@@ -164,16 +198,26 @@ def calculate_full_tax(submission) -> dict:
     rent_relief = (rent_gross * RENT_RELIEF_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     # ── 3. Taxable Income ────────────────────────────────────────────────────
+    # Qualifying payments and rent relief offset local (non-foreign) income only.
+    # The personal relief (tax-free allowance) is applied to local income first;
+    # any unused balance then offsets foreign income.
 
-    net_taxable = total_assessable - total_qualifying - personal_relief - rent_relief
-    if net_taxable < 0:
-        net_taxable = Decimal('0.00')
+    non_foreign_income = total_assessable - foreign
+    local_base = max(Decimal('0.00'), non_foreign_income - total_qualifying - rent_relief)
+
+    local_relief_used = min(personal_relief, local_base)
+    taxable_local = local_base - local_relief_used
+    remaining_relief = personal_relief - local_relief_used
+    taxable_foreign = max(Decimal('0.00'), foreign - remaining_relief)
+
+    net_taxable = taxable_local + taxable_foreign
 
     # ── 4. Tax Computation with slab breakdown ──────────────────────────────
-    # Progressive slabs apply only to non-foreign income.
-    # Foreign income is taxed at a flat 15% separately (Step 6).
-    slab_taxable = max(Decimal('0.00'), net_taxable - foreign)
-    gross_tax, slab_breakdown = calculate_tax_on_income(slab_taxable)
+    # Local income fills the progressive slabs first at normal rates; foreign
+    # income fills any remaining slab space at a rate capped at 15%.
+    gross_tax, foreign_tax_gross, slab_breakdown, foreign_slab_breakdown = calculate_mixed_tax(
+        taxable_local, taxable_foreign
+    )
 
     # ── 5. Tax Credits ───────────────────────────────────────────────────────
 
@@ -195,10 +239,9 @@ def calculate_full_tax(submission) -> dict:
     # from income section WHT totals — adding income WHT separately would double-count).
     total_credits = apit + wht_certs + partnership_credit + self_assessment_total
 
-    # ── 6. Foreign income tax @ flat 15% (Schedule 9 cage 901) ──────────────
-    # Foreign income is excluded from progressive slabs and taxed only at flat 15%.
-    # Foreign tax paid abroad offsets the flat 15% liability.
-    foreign_tax_gross = (foreign * FOREIGN_INCOME_TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    # ── 6. Foreign income tax (Schedule 9 cage 901) ─────────────────────────
+    # foreign_tax_gross was computed in step 4 (capped at 15% per slab).
+    # Foreign tax paid abroad offsets this liability.
     foreign_tax_net = max(Decimal('0.00'), foreign_tax_gross - foreign_tax_paid)
 
     # ── 7. Net Tax Payable ───────────────────────────────────────────────────
@@ -220,14 +263,17 @@ def calculate_full_tax(submission) -> dict:
         'wht_sole_prop': sole_prop_wht,
         'wht_tb_securities': tb_securities_wht,
         'foreign_income': foreign,
-        'foreign_income_tax': foreign_tax_net,      # net flat-15% tax after foreign tax credit
+        'foreign_income_tax': foreign_tax_net,      # net tax after foreign tax credit
         'net_tax_payable': net_tax,
         'slab_breakdown': slab_breakdown,
+        'foreign_slab_breakdown': foreign_slab_breakdown,
         'breakdown': {
             'local_employment': local_emp,
             'foreign_income': foreign,
+            'taxable_local': taxable_local,
+            'taxable_foreign': taxable_foreign,
             'foreign_tax_paid': foreign_tax_paid,
-            'foreign_tax_gross': foreign_tax_gross,   # foreign * 15%
+            'foreign_tax_gross': foreign_tax_gross,   # tax on taxable_foreign, capped at 15% per slab
             'foreign_tax_net': foreign_tax_net,       # after deducting foreign_tax_paid
             'terminal_benefit': terminal,
             'rent_income': rent_gross,

@@ -656,19 +656,14 @@ def _add_schedule_8(els, st, submission):
     taxable   = _D(submission.net_taxable_income)
     gross_tax = _D(submission.gross_tax)
 
-    # Foreign income amounts for 809.B
-    fi_obj = getattr(submission, 'foreign_income', None)
-    foreign_total = (
-        _D(fi_obj and fi_obj.employment_service_fee) +
-        _D(fi_obj and fi_obj.foreign_business_income) +
-        _D(fi_obj and fi_obj.other_foreign_income)
-    )
-    foreign_tax_paid = _D(fi_obj and fi_obj.foreign_tax_paid)
-    ftax_gross = (foreign_total * Decimal('0.15')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    ftax_net   = max(Decimal('0'), ftax_gross - foreign_tax_paid)
+    # foreign_income_tax is already net of foreign_tax_paid credit (tax_calculator.py,
+    # slabs capped at 15% with personal relief spillover applied to foreign income first).
+    ftax_net = _D(submission.foreign_income_tax)
 
-    # 809.A.1 = taxable income excluding foreign income (progressive slab portion)
-    slab_taxable = max(Decimal('0'), taxable - foreign_total)
+    # 809.A.1 = local (non-foreign) taxable income taxed at progressive slab rates
+    slab_taxable = sum(_D(row.get('taxable_amount', 0)) for row in (submission.slab_breakdown or []))
+    # 809.B.1 = foreign taxable income (net of personal relief), taxed at slab rates capped at 15%
+    foreign_taxable = max(Decimal('0'), taxable - slab_taxable)
 
     def _rate_tbl(rows):
         """6-col table: label | cage.1 | amt.1 | rate | cage.3 | amt.3"""
@@ -742,8 +737,8 @@ def _add_schedule_8(els, st, submission):
             '808.1', Decimal('0'), '40%', '808.3', Decimal('0')),
         _rr('Tax on Taxable Income to be taxed at progressive Income Tax Rates',
             '809.A.1', slab_taxable, '', '809.A.3', gross_tax),
-        _rr('Foreign income taxed at flat 15%',
-            '809.B.1', foreign_total, '15%', '809.B.3', ftax_net),
+        _rr('Foreign income taxed at progressive rates (capped at 15%)',
+            '809.B.1', foreign_taxable, 'max 15%', '809.B.3', ftax_net),
     ]))
     els.append(Spacer(1, 2))
     els.append(_cage_tbl([
@@ -1046,7 +1041,7 @@ def _add_tax_computation_summary(els, st, submission):
     els.append(ded_tbl)
     els.append(Spacer(1, 4))
 
-    # ── Foreign Income Tax @ 15% ───────────────────────────────────────────────
+    # ── Foreign Income Tax (progressive slabs, capped at 15%) ─────────────────
     foreign_total = (
         _D(fi and fi.employment_service_fee) +
         _D(fi and fi.foreign_business_income) +
@@ -1054,12 +1049,15 @@ def _add_tax_computation_summary(els, st, submission):
     )
     foreign_tax_paid = _D(fi and fi.foreign_tax_paid)
     if foreign_total > 0:
-        _sec(els, st, 'C.  Foreign Income Tax (Flat Rate 15%)')
-        ftax_gross = (foreign_total * Decimal('0.15')).quantize(Decimal('0.01'))
-        ftax_net   = max(Decimal('0'), ftax_gross - foreign_tax_paid)
+        _sec(els, st, 'C.  Foreign Income Tax (progressive rates, capped at 15%)')
+        # foreign_income_tax is already net of the foreign_tax_paid credit
+        # (tax_calculator.py: personal relief applied to local income first, then
+        # any balance to foreign income; foreign income taxed at slab rates capped at 15%).
+        ftax_net   = _D(submission.foreign_income_tax)
+        ftax_gross = ftax_net + foreign_tax_paid
         ft_rows = [
             [_P('Foreign Income', S),                     _P(_fmt(foreign_total), SR)],
-            [_P('Tax @ 15%', S),                          _P(_fmt(ftax_gross), SR)],
+            [_P('Tax (progressive, max 15%)', S),         _P(_fmt(ftax_gross), SR)],
         ]
         if foreign_tax_paid > 0:
             ft_rows.append([_P('Less: Foreign Tax Paid (Cage 901)', S), _P(f'({_fmt(foreign_tax_paid)})', SR)])
@@ -1162,7 +1160,7 @@ def _add_tax_computation_summary(els, st, submission):
     net_tax = _D(submission.net_tax_payable)
     npay_rows = [
         [_P('Gross Tax on Taxable Income', S),  _P(_fmt(gross_tax),   SR)],
-        [_P('Net Foreign Income Tax (15%)', S), _P(_fmt(ftax_net),    SR)],
+        [_P('Net Foreign Income Tax (max 15%)', S), _P(_fmt(ftax_net),    SR)],
         [_P('Less: Total Tax Credits', S),       _P(f'({_fmt(total_credits)})', SR)],
         [_P('NET TAX PAYABLE (Rs.)', SB),        _P(_fmt(net_tax),     SBR)],
     ]
