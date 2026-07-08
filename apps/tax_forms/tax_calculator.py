@@ -47,6 +47,10 @@ def calculate_mixed_tax(taxable_local: Decimal, taxable_foreign: Decimal):
     net of whatever bracket space local income already used, is taxed at 6%, and any
     excess is taxed at 15% rather than the higher local progressive rates).
 
+    foreign_breakdown is grouped by effective tax percentage rather than by the
+    underlying slab — every bracket above the first caps to the same 15%, so this
+    collapses to at most two rows (6% and 15%) instead of one row per slab.
+
     Returns (local_tax, foreign_tax, local_breakdown, foreign_breakdown).
     """
     local_remaining = taxable_local if taxable_local > 0 else Decimal('0.00')
@@ -55,7 +59,8 @@ def calculate_mixed_tax(taxable_local: Decimal, taxable_foreign: Decimal):
     local_tax = Decimal('0.00')
     foreign_tax = Decimal('0.00')
     local_breakdown = []
-    foreign_breakdown = []
+    foreign_by_rate = {}  # rate -> {'taxable_amount': Decimal, 'tax': Decimal}
+    foreign_rate_order = []
 
     for idx, (slab_amount, rate) in enumerate(TAX_SLABS):
         if local_remaining <= 0 and foreign_remaining <= 0:
@@ -82,13 +87,23 @@ def calculate_mixed_tax(taxable_local: Decimal, taxable_foreign: Decimal):
             effective_rate = min(rate, FOREIGN_INCOME_MAX_RATE)
             slab_tax = (foreign_used * effective_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             foreign_tax += slab_tax
-            foreign_breakdown.append({
-                'label': SLAB_LABELS[idx],
-                'rate': str(effective_rate),
-                'taxable_amount': str(foreign_used.quantize(Decimal('0.01'))),
-                'tax': str(slab_tax),
-            })
+            if effective_rate in foreign_by_rate:
+                bucket = foreign_by_rate[effective_rate]
+                bucket['taxable_amount'] += foreign_used
+                bucket['tax'] += slab_tax
+            else:
+                foreign_by_rate[effective_rate] = {'taxable_amount': foreign_used, 'tax': slab_tax}
+                foreign_rate_order.append(effective_rate)
             foreign_remaining -= foreign_used
+
+    foreign_breakdown = [
+        {
+            'rate': str(rate),
+            'taxable_amount': str(foreign_by_rate[rate]['taxable_amount'].quantize(Decimal('0.01'))),
+            'tax': str(foreign_by_rate[rate]['tax'].quantize(Decimal('0.01'))),
+        }
+        for rate in foreign_rate_order
+    ]
 
     return (
         local_tax.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP),
