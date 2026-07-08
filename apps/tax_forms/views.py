@@ -118,6 +118,8 @@ class TaxYearListView(APIView):
     Returns tax years visible to the requesting user:
     - Consultants / admins / super_admin: all years
     - Clients: active year + any year with an approved access request
+
+    Only super_admin may create a new Year of Assessment (POST).
     """
     permission_classes = [IsAuthenticated]
 
@@ -133,6 +135,18 @@ class TaxYearListView(APIView):
             from django.db.models import Q
             years = TaxYear.objects.filter(Q(is_active=True) | Q(id__in=approved_year_ids))
         return Response(TaxYearSerializer(years, many=True).data)
+
+    def post(self, request):
+        if request.user.role != 'super_admin':
+            return Response(
+                {'error': 'Only Super Admin can create a new Year of Assessment.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = TaxYearSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class TaxSubmissionListCreateView(APIView):
