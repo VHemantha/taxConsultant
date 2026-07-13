@@ -153,7 +153,9 @@ class TaxSubmissionListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if request.user.role == 'consultant':
+        if request.user.role in ('admin', 'super_admin'):
+            submissions = TaxSubmission.objects.all()
+        elif request.user.role in ('consultant', 'handling_person'):
             from django.db.models import Q
             # Clients assigned to this consultant
             assigned_client_ids = ClientProfile.objects.filter(
@@ -567,9 +569,9 @@ class SectionUpdateView(APIView):
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if submission.status == 'archived':
+        if submission.status == 'archived' and request.user.role != 'super_admin':
             return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
-        if request.user.role != 'consultant' and submission.status not in ['draft', 'info_requested']:
+        if request.user.role not in ('consultant', 'super_admin') and submission.status not in ['draft', 'info_requested']:
             return Response({'error': 'Cannot edit in current status.'}, status=status.HTTP_400_BAD_REQUEST)
 
         obj = self.get_or_create_section(submission)
@@ -577,7 +579,7 @@ class SectionUpdateView(APIView):
         serializer = self.serializer_class(obj, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            if request.user.role == 'consultant':
+            if request.user.role in ('consultant', 'super_admin'):
                 _log_edit(
                     submission, request.user,
                     section=self.section_name or self.model_class.__name__,
@@ -867,7 +869,7 @@ class MultiRowSectionView(APIView):
         submission = _get_submission_for_user(submission_id, request.user)
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if submission.status == 'archived':
+        if submission.status == 'archived' and request.user.role != 'super_admin':
             return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
         if request.user.role not in ('consultant', 'handling_person', 'admin', 'super_admin') and submission.status not in ['draft', 'info_requested']:
             return Response({'error': 'Cannot edit in current status.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -914,7 +916,7 @@ class MultiRowItemView(APIView):
         obj = self.get_object(pk, request.user)
         if not obj:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if obj.submission.status == 'archived':
+        if obj.submission.status == 'archived' and request.user.role != 'super_admin':
             return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
         old_data = dict(self.serializer_class(obj).data)
         serializer = self.serializer_class(obj, data=request.data, partial=True)
@@ -935,10 +937,10 @@ class MultiRowItemView(APIView):
         obj = self.get_object(pk, request.user)
         if not obj:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if obj.submission.status == 'archived':
+        if obj.submission.status == 'archived' and request.user.role != 'super_admin':
             return Response({'error': 'Cannot delete from archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
         old_data = dict(self.serializer_class(obj).data)
-        if request.user.role == 'consultant':
+        if request.user.role in ('consultant', 'super_admin'):
             _log_edit(
                 obj.submission, request.user,
                 section=self.section_name or self.model_class.__name__,
@@ -1511,7 +1513,7 @@ class WHTCertificateListView(APIView):
         submission = _get_submission_for_user(submission_id, request.user)
         if not submission:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if submission.status == 'archived':
+        if submission.status == 'archived' and request.user.role != 'super_admin':
             return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
 
         file = request.FILES.get('certificate_file')
@@ -1549,7 +1551,7 @@ class WHTCertificateItemView(APIView):
         cert, sub = self._get_cert_and_submission(pk, request.user)
         if not cert or not sub:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if sub.status == 'archived':
+        if sub.status == 'archived' and request.user.role != 'super_admin':
             return Response({'error': 'Cannot edit archived submission.'}, status=status.HTTP_400_BAD_REQUEST)
         serializer = WHTCertificateSerializer(cert, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
