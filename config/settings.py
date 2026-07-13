@@ -171,13 +171,13 @@ FRONTEND_URL = config('FRONTEND_URL', default='https://tax-automation-frontend.o
 
 # eSMS (Dialog Enterprise Marketplace) — bulk SMS gateway used for client/staff SMS
 # notifications alongside the existing email notifications.
-ESMS_ENABLED = True
+ESMS_ENABLED = False  # paused — Dialog rejected the configured credentials 3x; re-enable once fixed
 ESMS_LOGIN_URL = 'https://esms.dialog.lk/api/v2/user/login'
 ESMS_SEND_URL = 'https://e-sms.dialog.lk/api/v2/sms'
 # Preferred: a pre-issued long-lived bearer token (widget API key) used directly as the
 # Authorization header — no login call needed. Falls back to username/password login
 # (12-hour token, auto-refreshed) if ESMS_API_KEY is not set.
-ESMS_API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTEyMTQsImN1c3RvbWVyX3JvbGUiOjAsImlhdCI6MTc4MzkxNTYwNiwiZXhwIjo0OTA4MTE4MDA2fQ.CSWP-hPxvujBdkaLD1SDJj4eXIyDpx1HgWHBNJ1WxjI'
+ESMS_API_KEY = config('ESMS_API_KEY', default='')
 ESMS_USERNAME = 'dprlk-web'
 ESMS_PASSWORD = 'Dpr@it0104'
 # Optional; Sender ID/mask (max 11 chars) visible to the recipient. Left blank, the
