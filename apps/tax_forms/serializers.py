@@ -157,6 +157,14 @@ class LiabilitySerializer(serializers.ModelSerializer):
 
 
 class DeclarantDetailsSerializer(serializers.ModelSerializer):
+    # All declarant fields are mandatory in the client-facing form even though the
+    # model allows blank/null (kept nullable to avoid a destructive migration for
+    # older records that pre-date this requirement).
+    telephone = serializers.CharField(required=True, allow_blank=False)
+    mobile = serializers.CharField(required=True, allow_blank=False)
+    tin = serializers.CharField(required=True, allow_blank=False)
+    pin = serializers.CharField(required=True, allow_blank=False)
+
     class Meta:
         model = DeclarantDetails
         exclude = ['submission']
