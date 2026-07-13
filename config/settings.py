@@ -171,7 +171,7 @@ FRONTEND_URL = config('FRONTEND_URL', default='https://tax-automation-frontend.o
 
 # eSMS (Dialog Enterprise Marketplace) — bulk SMS gateway used for client/staff SMS
 # notifications alongside the existing email notifications.
-ESMS_ENABLED = config('ESMS_ENABLED', default=True, cast=bool)
+ESMS_ENABLED = True
 ESMS_LOGIN_URL = 'https://esms.dialog.lk/api/v2/user/login'
 ESMS_SEND_URL = 'https://e-sms.dialog.lk/api/v2/sms'
 # Preferred: a pre-issued long-lived bearer token (widget API key) used directly as the
