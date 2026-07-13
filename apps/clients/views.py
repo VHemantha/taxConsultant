@@ -39,7 +39,7 @@ class RegisterClientView(APIView):
         serializer = RegisterClientSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             user, profile = serializer.save()
-            Notification.objects.create(
+            notification = Notification.objects.create(
                 recipient=user,
                 title='Welcome to Tax Automation Portal',
                 message='Your account has been created. Please log in with your credentials and change your password.',
@@ -50,6 +50,8 @@ class RegisterClientView(APIView):
                 'client_id': profile.id,
                 'email': user.email,
                 'username': user.username,
+                # True = SMS sent, False = attempted but failed, None = no phone number on file
+                'sms_sent': getattr(notification, '_sms_result', None),
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

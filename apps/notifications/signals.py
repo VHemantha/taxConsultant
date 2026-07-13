@@ -29,11 +29,23 @@ def _resolve_recipient_phone(user):
 
 
 def _send_notification_sms(notification):
+    """
+    Sends the SMS and stashes the outcome on the (in-memory) notification
+    instance as `_sms_result`: True (sent), False (attempted, failed), or
+    None (no phone number on file — nothing attempted). Since post_save fires
+    synchronously on the same instance the caller holds, code that just called
+    Notification.objects.create(...) can read this back immediately via
+    getattr(notification, '_sms_result', None) — e.g. to report the outcome
+    in an API response.
+    """
     recipient = notification.recipient
     phone = _resolve_recipient_phone(recipient)
     if not phone:
-        return
+        notification._sms_result = None
+        return None
     text = f'{notification.title}: {notification.message}'.replace('\n', ' ').strip()
     if len(text) > 300:
         text = text[:297] + '...'
-    send_sms([phone], text)
+    result = send_sms([phone], text)
+    notification._sms_result = result
+    return result
