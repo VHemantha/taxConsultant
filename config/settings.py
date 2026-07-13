@@ -168,6 +168,21 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = 'DPR Tax Management <tms@dpr.lk>'
 
 FRONTEND_URL = config('FRONTEND_URL', default='https://tax-automation-frontend.onrender.com')
+
+# eSMS (Dialog Enterprise Marketplace) — bulk SMS gateway used for client/staff SMS
+# notifications alongside the existing email notifications.
+ESMS_ENABLED = config('ESMS_ENABLED', default=True, cast=bool)
+ESMS_LOGIN_URL = config('ESMS_LOGIN_URL', default='https://esms.dialog.lk/api/v2/user/login')
+ESMS_SEND_URL = config('ESMS_SEND_URL', default='https://e-sms.dialog.lk/api/v2/sms')
+# Preferred: a pre-issued long-lived bearer token (widget API key) used directly as the
+# Authorization header — no login call needed. Falls back to username/password login
+# (12-hour token, auto-refreshed) if ESMS_API_KEY is not set.
+ESMS_API_KEY = config('ESMS_API_KEY', default='')
+ESMS_USERNAME = config('ESMS_USERNAME', default='')
+ESMS_PASSWORD = config('ESMS_PASSWORD', default='')
+# Optional; Sender ID/mask (max 11 chars) visible to the recipient. Left blank, the
+# account's default registered mask is used.
+ESMS_SENDER_ADDRESS = config('ESMS_SENDER_ADDRESS', default='')
 # Document Storage
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_DOCUMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
