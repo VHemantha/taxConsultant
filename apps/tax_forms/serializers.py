@@ -12,6 +12,20 @@ from .models import (
 )
 
 
+def _get_final_document_url(submission, request):
+    """
+    URL of the final tax return document the consultant uploaded when archiving
+    this submission (Document.document_type == 'final_submission'). None if the
+    submission hasn't been archived / no such document exists.
+    """
+    doc = submission.documents.filter(document_type='final_submission').order_by('-uploaded_at').first()
+    if not doc or not doc.file:
+        return None
+    if request:
+        return request.build_absolute_uri(doc.file.url)
+    return doc.file.url
+
+
 class TaxYearSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaxYear
@@ -302,6 +316,7 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
     client_email = serializers.EmailField(source='client.email', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
     payment_slip_url = serializers.SerializerMethodField()
+    final_document_url = serializers.SerializerMethodField()
     consultant_name = serializers.SerializerMethodField()
     consultant_email = serializers.SerializerMethodField()
     consultant_phone = serializers.SerializerMethodField()
@@ -335,6 +350,9 @@ class TaxSubmissionSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.payment_slip.url)
         return obj.payment_slip.url
 
+    def get_final_document_url(self, obj):
+        return _get_final_document_url(obj, self.context.get('request'))
+
 
 class TaxSubmissionListSerializer(serializers.ModelSerializer):
     tax_year_label = serializers.CharField(source='tax_year.label', read_only=True)
@@ -342,6 +360,7 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
     client_email = serializers.EmailField(source='client.email', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
     payment_slip_url = serializers.SerializerMethodField()
+    final_document_url = serializers.SerializerMethodField()
 
     class Meta:
         model = TaxSubmission
@@ -351,6 +370,7 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
             'total_assessable_income', 'net_taxable_income',
             'total_tax_credits', 'net_tax_payable',
             'payment_status', 'payment_status_display', 'payment_slip_url',
+            'final_document_url',
             'payment_updated_at',
             'info_request_message',
             'created_at', 'submitted_at', 'confirmed_at',
@@ -369,6 +389,9 @@ class TaxSubmissionListSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.payment_slip.url)
         return obj.payment_slip.url
+
+    def get_final_document_url(self, obj):
+        return _get_final_document_url(obj, self.context.get('request'))
 
 
 class SubmissionEditLogSerializer(serializers.ModelSerializer):
