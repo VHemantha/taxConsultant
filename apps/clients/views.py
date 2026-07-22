@@ -6,6 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.conf import settings
 
 from .models import ClientProfile, ClientAssessmentYear
 from .serializers import ClientProfileSerializer, RegisterClientSerializer, ClientListSerializer
@@ -39,10 +40,14 @@ class RegisterClientView(APIView):
         serializer = RegisterClientSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             user, profile = serializer.save()
+            portal_url = settings.FRONTEND_URL
             notification = Notification.objects.create(
                 recipient=user,
                 title='Welcome to Tax Automation Portal',
-                message='Your account has been created. Please log in with your credentials and change your password.',
+                message=(
+                    f'Your account has been created. Username: {user.username}. '
+                    f'Log in at {portal_url} and change your password on first login.'
+                ),
                 notification_type='info',
             )
             return Response({

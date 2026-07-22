@@ -1380,7 +1380,8 @@ class ClientFinalConfirmView(APIView):
                 title='Client Confirmed Tax Return',
                 message=(
                     f'{submission.client.get_full_name()} has confirmed their tax return for '
-                    f'{submission.tax_year.label}. You can now mark it as completed and archive.'
+                    f'{submission.tax_year.label}. You can now proceed with uploading your Income Tax '
+                    f'Return to the RAMIS system.'
                 ),
                 notification_type='success',
                 related_submission_id=submission.id,
@@ -1446,12 +1447,17 @@ class ArchiveSubmissionView(APIView):
             profile.status = 'archived'
             profile.save(update_fields=['status'])
 
+        year_range = f'{submission.tax_year.year}/{submission.tax_year.year + 1}'
         Notification.objects.create(
             recipient=submission.client,
             title='Tax Return Finalised & Archived',
             message=(
-                f'Your tax return for {submission.tax_year.label} has been finalised. '
-                f'All documents have been archived. Thank you.'
+                'Dear Valued Client,\n'
+                f'Your Income Tax Return for the Year of Assessment {year_range} has been successfully '
+                'submitted to the Inland Revenue Department (IRD). Please log in to your DPR Tax Portal '
+                'to view the submission details and related documents.\n'
+                f'{settings.FRONTEND_URL}\n'
+                'Thank you,'
             ),
             notification_type='success',
             related_submission_id=submission.id,

@@ -43,9 +43,13 @@ def _send_notification_sms(notification):
     if not phone:
         notification._sms_result = None
         return None
-    text = f'{notification.title}: {notification.message}'.replace('\n', ' ').strip()
-    if len(text) > 300:
-        text = text[:297] + '...'
+    # message is self-contained by convention (some are written as full letters,
+    # e.g. "Dear Valued Client, ..."), so send it as-is rather than prefixing the
+    # title — that reads awkwardly ("Title: Dear Valued Client, ...") and eats
+    # into the SMS length budget for no benefit.
+    text = notification.message.replace('\n', ' ').strip()
+    if len(text) > 600:
+        text = text[:597] + '...'
     result = send_sms([phone], text)
     notification._sms_result = result
     return result
