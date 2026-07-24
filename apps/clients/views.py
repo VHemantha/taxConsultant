@@ -99,6 +99,65 @@ class ClientDetailView(generics.RetrieveUpdateAPIView):
         return self.partial_update(request, *args, **kwargs)
 
 
+class ClientCredentialsView(APIView):
+    """
+    Consultant/admin view & change a client's login username and/or password.
+    Passwords are hashed and can never be read back — only newly-set ones are
+    returned once in the response, for the consultant to relay to the client.
+    """
+    permission_classes = [IsConsultantOrSuperAdmin]
+
+    def _get_profile(self, pk, user):
+        qs = ClientProfile.objects.select_related('user')
+        if user.role in ('super_admin', 'admin'):
+            return qs.get(id=pk)
+        return qs.get(id=pk, assigned_consultant=user)
+
+    def get(self, request, pk):
+        try:
+            profile = self._get_profile(pk, request.user)
+        except ClientProfile.DoesNotExist:
+            return Response({'error': 'Client not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'username': profile.user.username})
+
+    def patch(self, request, pk):
+        try:
+            profile = self._get_profile(pk, request.user)
+        except ClientProfile.DoesNotExist:
+            return Response({'error': 'Client not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        user = profile.user
+        new_username = (request.data.get('username') or '').strip()
+        new_password = request.data.get('password') or ''
+
+        if not new_username and not new_password:
+            return Response({'error': 'Provide a username and/or password to update.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        errors = {}
+        if new_username and new_username != user.username:
+            if User.objects.filter(username=new_username).exclude(id=user.id).exists():
+                errors['username'] = ['A user with this username already exists.']
+        if new_password:
+            try:
+                validate_password(new_password, user=user)
+            except ValidationError as exc:
+                errors['password'] = list(exc.messages)
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        response_data = {'message': 'Client credentials updated successfully.'}
+        if new_username and new_username != user.username:
+            user.username = new_username
+            response_data['username'] = new_username
+        if new_password:
+            user.set_password(new_password)
+            user.must_change_password = True
+            response_data['password'] = new_password
+        user.save()
+
+        return Response(response_data)
+
+
 class MyProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ClientProfileSerializer
     permission_classes = [IsAuthenticated]
